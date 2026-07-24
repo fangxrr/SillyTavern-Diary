@@ -1,0 +1,12 @@
+{
+    "display_name": "日记本",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "fangxrr",
+    "version": "0.1.0",
+    "homePage": "https://github.com/fangxrr/SillyTavern-Diary",
+    "auto_update": true
+}
