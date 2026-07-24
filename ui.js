@@ -82,6 +82,7 @@ function build() {
       <div class="dy-scrim"></div>
       <div class="dy-stage">
         <div class="dy-book">
+          <button class="dy-x" title="关闭日记本">×</button>
           <div class="dy-cover"></div>
           <div class="dy-marks"></div>
           <div class="dy-inner">
@@ -96,6 +97,7 @@ function build() {
       </div>`;
     document.body.appendChild(root);
     root.querySelector('.dy-scrim').addEventListener('click', close);
+    root.querySelector('.dy-x').addEventListener('click', close);
     root.querySelector('.dy-close').addEventListener('click', () => go('cover'));
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && root?.classList.contains('dy-on')) close();
@@ -580,6 +582,12 @@ async function renderSettings(pane) {
           <p style="margin-bottom:8px">填了就只取匹配的部分；留空用上面的默认清洗。</p>
           <input type="text" class="dy-wide dy-mono" data-s="contentRegex" value="${esc(s.contentRegex)}"
             placeholder="&lt;content&gt;([\\s\\S]*?)&lt;/content&gt;"></div></div>
+        <div class="dy-row"><div class="dy-row__t"><label>时间在哪</label>
+          <p style="margin-bottom:8px">填了就只从这一小段读日期，不必把整段正文喂给模型，省很多。</p>
+          <input type="text" class="dy-wide dy-mono" data-s="timeRegex" value="${esc(s.timeRegex)}"
+            placeholder="&lt;Ti&gt;([^&lt;]*)&lt;/Ti&gt;">
+          <div class="dy-probe"><button class="dy-btn dy-btn--xs" data-act="probe">让它读一条，猜猜看</button>
+            <span class="dy-probe__out"></span></div></div></div>
         <div class="dy-row"><div class="dy-row__t"><label>故事从哪天开始</label></div>
           <div class="dy-row__c"><input type="text" data-s="__start" value="${esc(d.startDate)}"
             placeholder="YYYY-MM-DD" style="width:110px">
@@ -590,10 +598,12 @@ async function renderSettings(pane) {
         <div class="dy-sec__h">怎 么 写</div>
         <textarea data-s="writePrompt">${esc(s.writePrompt)}</textarea>
         <p class="dy-hint">可用 <code>{{char}}</code> <code>{{user}}</code> <code>{{date}}</code>
-          <code>{{content}}</code> <code>{{world}}</code> <code>{{memory}}</code></p>
+          <code>{{content}}</code> <code>{{world}}</code> <code>{{memory}}</code>
+          <button class="dy-btn dy-btn--xs" data-reset="writePrompt">恢复默认</button></p>
         <details class="dy-fold"><summary>看时间用的提示词</summary>
           <textarea data-s="timePrompt">${esc(s.timePrompt)}</textarea>
-          <p class="dy-hint">可用 <code>{{start}}</code> <code>{{content}}</code>。必须让它只回 JSON。</p>
+          <p class="dy-hint">可用 <code>{{start}}</code> <code>{{content}}</code>。必须让它只回 JSON。
+            <button class="dy-btn dy-btn--xs" data-reset="timePrompt">恢复默认</button></p>
         </details>
       </div>
 
@@ -730,6 +740,36 @@ function bindSettings(pane) {
             catch (e) { toast(e.message, true); }
             b.textContent = '测试连接'; b.disabled = false;
         });
+    });
+
+    // 恢复默认提示词
+    pane.querySelectorAll('[data-reset]').forEach(btn => btn.addEventListener('click', () => {
+        const key = btn.dataset.reset;
+        const def = key === 'timePrompt' ? store.DEFAULT_TIME_PROMPT : store.DEFAULT_WRITE_PROMPT;
+        if (!confirm('用默认的覆盖掉现在这份？')) return;
+        s[key] = def;
+        store.saveSettings();
+        const ta = pane.querySelector(`textarea[data-s="${key}"]`);
+        if (ta) ta.value = def;
+        toast('已恢复默认');
+    }));
+
+    // 猜时间正则：只给建议，填不填由用户定
+    pane.querySelector('[data-act="probe"]')?.addEventListener('click', async ev => {
+        const b = ev.currentTarget;
+        const out = pane.querySelector('.dy-probe__out');
+        b.textContent = '读…'; b.disabled = true; out.textContent = '';
+        try {
+            const r = await engine.probeTimeRegex();
+            const input = pane.querySelector('[data-s="timeRegex"]');
+            input.value = r.regex;
+            s.timeRegex = r.regex;
+            store.saveSettings();
+            out.textContent = r.sample ? `抓到：${r.sample.slice(0, 40)}` : '已填入，确认一下';
+        } catch (e) {
+            out.textContent = e.message;
+        }
+        b.textContent = '让它读一条，猜猜看'; b.disabled = false;
     });
 
     // 重新读起始日

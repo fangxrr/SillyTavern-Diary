@@ -178,7 +178,7 @@ export function setMark(date, label) {
 /* ────────── 全局设置 ────────── */
 
 const DEFAULT_TIME_PROMPT =
-`你是一个时间标注器。下面是一段角色扮演对话的正文，每条前面有编号。
+`你是一个时间标注器。下面是按顺序编号的若干条内容，来自一段角色扮演。
 判断每条发生在故事里的哪一天。
 
 规则：
@@ -191,7 +191,7 @@ const DEFAULT_TIME_PROMPT =
 格式：
 {"items":[{"i":0,"date":"YYYY-MM-DD","from":""},{"i":1,"date":"YYYY-MM-DD","from":"YYYY-MM-DD"}]}
 
-正文：
+内容：
 {{content}}`;
 
 const DEFAULT_WRITE_PROMPT =
@@ -217,6 +217,7 @@ function defaultSettings() {
         waitNext: true,
         clean: true,
         contentRegex: '',
+        timeRegex: '',
         startYearFallback: new Date().getFullYear(),
 
         apiTime: {

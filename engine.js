@@ -69,6 +69,14 @@ export async function detectStartDate(force = false) {
     if (!first) return '';
 
     const s = store.settings();
+
+    // 先试正则 + 本地解析，能白嫖就不花钱
+    const frag = ctxLib.extractTime(first);
+    if (frag) {
+        const local = parseLocalDate(frag, s.startYearFallback);
+        if (local) { d.startDate = local; store.save(); emit('meta'); return local; }
+    }
+
     try {
         const out = await api.chat(s.apiTime, ctxLib.buildStartPrompt(first));
         const date = normDate(api.parseJson(out)?.date);
@@ -79,31 +87,85 @@ export async function detectStartDate(force = false) {
     return d.startDate;
 }
 
+const pad = n => String(n).padStart(2, '0');
+
 function normDate(v) {
     const m = String(v || '').match(/(\d{4})\D(\d{1,2})\D(\d{1,2})/);
     if (!m) return '';
-    return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+    return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+}
+
+const EN_MONTH = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/**
+ * 本地解析日期，不花钱。认得这些写法：
+ *   2007年3月15日 / 2007-03-15 / 2007/3/15 / 2007.3.15
+ *   3月15日（缺年份就补上故事的年份）
+ *   March 15, 2007 / 15 Mar 2007
+ */
+function parseLocalDate(text, year) {
+    const t = String(text || '');
+
+    let m = t.match(/(\d{4})\s*[年\-\/.]\s*(\d{1,2})\s*[月\-\/.]\s*(\d{1,2})/);
+    if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+
+    m = t.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]/);
+    if (m) return `${year}-${pad(m[1])}-${pad(m[2])}`;
+
+    m = t.match(/([a-z]{3,9})\.?\s+(\d{1,2})(?:\s*,)?\s*(\d{4})?/i);
+    if (m) {
+        const mi = EN_MONTH.indexOf(m[1].slice(0, 3).toLowerCase());
+        if (mi >= 0) return `${m[3] || year}-${pad(mi + 1)}-${pad(m[2])}`;
+    }
+    m = t.match(/(\d{1,2})\s+([a-z]{3,9})\.?\s*(\d{4})?/i);
+    if (m) {
+        const mi = EN_MONTH.indexOf(m[2].slice(0, 3).toLowerCase());
+        if (mi >= 0) return `${m[3] || year}-${pad(mi + 1)}-${pad(m[1])}`;
+    }
+    return '';
 }
 
 /* ────────── 日期检测 ────────── */
 
 /**
- * 给一批消息标日期。
- * 返回 [{ msg, uid, date, from }]，from 非空表示这条横跨多天。
+ * 给一批消息标日期，返回 [{ msg, uid, date, from }]。
+ *
+ * 三级策略，能省则省：
+ *   1. 缓存里有 → 不动
+ *   2. 「时间在哪」正则抠得出、本地解析得出 → 零成本
+ *   3. 还是不行 → 问模型。有片段就只喂片段，没有才喂全文。
  */
 export async function tagDates(messages) {
     if (!messages.length) return [];
     const s = store.settings();
     const d = store.data();
+    const year = (d.startDate || '').slice(0, 4) || s.startYearFallback;
 
-    // 已经标过的直接用缓存
-    const unknown = messages.filter(m => !d.dateIndex[store.uidOf(m)]);
-    if (unknown.length) {
+    const ask = [];       // 需要问模型的消息
+    const frags = [];     // 与 ask 一一对应的时间片段（可能为空串）
+    let allHaveFrag = true;
+
+    for (const m of messages) {
+        const uid = store.uidOf(m);
+        if (d.dateIndex[uid]) continue;
+
+        const frag = ctxLib.extractTime(m);
+        if (frag) {
+            const local = parseLocalDate(frag, year);
+            if (local) { d.dateIndex[uid] = local; continue; }  // 白嫖成功
+        } else {
+            allHaveFrag = false;
+        }
+        ask.push(m);
+        frags.push(frag);
+    }
+
+    if (ask.length) {
         try {
-            const out = await api.chat(s.apiTime, ctxLib.buildTimePrompt(unknown));
-            const items = api.parseJson(out)?.items || [];
-            for (const it of items) {
-                const m = unknown[Number(it.i)];
+            const prompt = ctxLib.buildTimePrompt(ask, allHaveFrag ? frags : null);
+            const out = await api.chat(s.apiTime, prompt);
+            for (const it of (api.parseJson(out)?.items || [])) {
+                const m = ask[Number(it.i)];
                 if (!m) continue;
                 const date = normDate(it.date);
                 if (!date) continue;
@@ -111,11 +173,11 @@ export async function tagDates(messages) {
                 d.dateIndex[uid] = date;
                 if (normDate(it.from)) d.dateIndex[uid + ':from'] = normDate(it.from);
             }
-            store.save();
         } catch (e) {
             console.warn('[日记本] 日期没读出来：', e.message);
         }
     }
+    store.save();
 
     // 没标到的沿用上一条
     let last = d.startDate || '';
@@ -125,6 +187,26 @@ export async function tagDates(messages) {
         if (date) last = date;
         return { msg: m, uid, date, from: d.dateIndex[uid + ':from'] || '' };
     });
+}
+
+/**
+ * 读一条角色消息，猜出时间标签在哪，返回正则建议。
+ * 只给建议，填不填由用户决定。
+ */
+export async function probeTimeRegex() {
+    const chat = getContext().chat || [];
+    const first = chat.find((m, i) => i > 0 && !m.is_user && String(m.mes || '').trim())
+        || chat.find(m => String(m.mes || '').trim());
+    if (!first) throw new Error('聊天里还没有角色回复');
+
+    const s = store.settings();
+    const out = await api.chat(s.apiTime, ctxLib.buildRegexProbePrompt(first));
+    const r = api.parseJson(out);
+    if (!r?.regex) throw new Error('没找到专门放时间的标签，手动填一个吧');
+
+    // 验一下这条正则真的能用
+    try { new RegExp(r.regex); } catch { throw new Error('模型给的正则不合法，手动填吧'); }
+    return { regex: r.regex, sample: r.sample || '' };
 }
 
 /* ────────── 分组 ────────── */

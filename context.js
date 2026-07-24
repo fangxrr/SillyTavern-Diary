@@ -143,6 +143,46 @@ function budget(text, maxTokens) {
     return '…（较早的内容已略去）\n\n' + text.slice(-limit);
 }
 
+/* ────────── 时间片段 ────────── */
+
+/**
+ * 用「时间在哪」那条正则，从消息里只抠出时间那一小段。
+ * 抠到了就不用把整段正文喂给模型，省一大笔 token。
+ */
+export function extractTime(msg) {
+    const s = settings();
+    const pattern = s.timeRegex?.trim();
+    if (!pattern) return '';
+    try {
+        const m = new RegExp(pattern, 'i').exec(String(msg?.mes || ''));
+        if (!m) return '';
+        return String(m[1] ?? m[0]).replace(/<[^>]*>/g, '').trim();
+    } catch {
+        return '';   // 正则写错了，当作没填
+    }
+}
+
+/** 让模型看一条消息的原文，猜出时间标签在哪 */
+export function buildRegexProbePrompt(msg) {
+    return [{
+        role: 'user',
+        content:
+`下面是一条角色扮演回复的原文。里面可能有专门存放"故事内时间"的标签或字段。
+
+找出它，给我一个 JavaScript 正则，用一个捕获组抓出时间文本本身。
+只输出 JSON，不要解释、不要代码块标记：
+{"regex":"<Ti>([^<]*)</Ti>","sample":"抓到的内容"}
+
+注意：
+- 正则写成字符串，反斜杠要写成两个（例如 \\\\d）
+- 只要时间，不要地点、天气、场景标题
+- 找不到就回 {"regex":"","sample":""}
+
+原文：
+${String(msg?.mes || '').slice(0, 3000)}`,
+    }];
+}
+
 /* ────────── 提示词组装 ────────── */
 
 export async function buildWritePrompt(date, messages) {
@@ -173,12 +213,18 @@ export async function buildWritePrompt(date, messages) {
     return [{ role: 'user', content: body }];
 }
 
-export function buildTimePrompt(messages) {
+export function buildTimePrompt(messages, fragments = null) {
     const s = settings();
     const d = data();
+    // fragments 非空 = 已用正则抠出时间字段，只喂这些，不喂全文。
+    // 这里自动加一行说明来源，免得提示词里说"正文"而模型收到的是碎片。
+    const content = fragments
+        ? '（以下每行是从一条消息里抠出的时间字段，不是完整正文）\n'
+          + fragments.map((f, i) => `[${i}] ${f || '（这条没抓到）'}`).join('\n')
+        : numbered(messages);
     const body = s.timePrompt
         .replaceAll('{{start}}', d.startDate || `${s.startYearFallback}-01-01`)
-        .replaceAll('{{content}}', numbered(messages));
+        .replaceAll('{{content}}', content);
     return [{ role: 'user', content: body }];
 }
 
