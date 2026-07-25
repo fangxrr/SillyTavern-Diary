@@ -56,7 +56,25 @@ function blank() {
         dateIndex: {},     // { uid: 'YYYY-MM-DD' } 已检测出的楼层日期
         cursor: null,      // 已处理到哪条消息的 uid
         sinceCount: 0,     // 距上次写日记累计了几层
+        logs: [],          // 运行日志，只留最近若干条
     };
+}
+
+const LOG_KEEP = 12;
+
+/** 记一条运行日志。出问题时靠它复盘。 */
+export function addLog(rec) {
+    const d = data();
+    if (!Array.isArray(d.logs)) d.logs = [];
+    d.logs.unshift({ at: Date.now(), ...rec });
+    if (d.logs.length > LOG_KEEP) d.logs.length = LOG_KEEP;
+    save();
+    console.log('[日记本]', rec.kind, rec);
+}
+
+export function clearLogs() {
+    data().logs = [];
+    save();
 }
 
 export function data() {

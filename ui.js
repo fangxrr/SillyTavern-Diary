@@ -611,6 +611,16 @@ async function renderSettings(pane) {
       </div>
 
       <div class="dy-sec">
+        <div class="dy-sec__h">运 行 日 志</div>
+        <p class="dy-hint" style="margin:0 0 10px">日记写得不对时看这里：它读了哪几楼、日期怎么判的、实际喂进去什么。只留最近 12 条。</p>
+        <div class="dy-logs">${logsHtml()}</div>
+        <div class="dy-probe">
+          <button class="dy-btn dy-btn--xs" data-act="copyLogs">复制全部</button>
+          <button class="dy-btn dy-btn--xs" data-act="clearLogs">清空</button>
+        </div>
+      </div>
+
+      <div class="dy-sec">
         <div class="dy-sec__h">日 记 本 身</div>
         <div class="dy-row"><div class="dy-row__t"><label>导出</label>
           <p>这个对话的全部日记、收藏、标记。</p></div>
@@ -692,8 +702,53 @@ function runContentPreview(pane) {
     peek.setAttribute('data-on', '');
 }
 
+/* ────────── 运行日志 ────────── */
+
+function logsHtml() {
+    const logs = store.data().logs || [];
+    if (!logs.length) return '<p class="dy-hint" style="margin:0">还没有记录。写过一篇日记之后这里才有东西。</p>';
+
+    return logs.map(L => {
+        const t = new Date(L.at);
+        const when = `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+        const head = L.kind === '日期已修正'
+            ? `修正了 ${L.count} 处日期`
+            : `${L.date}　楼层 ${L.楼层}　提示词 ${L.提示词字数} 字`;
+        return `
+          <details class="dy-log">
+            <summary><span class="dy-log__k">${esc(L.kind)}</span>${esc(when)}　${esc(head)}</summary>
+            <pre>${esc(JSON.stringify(L, null, 2))}</pre>
+          </details>`;
+    }).join('');
+}
+
+function bindLogs(pane) {
+    pane.querySelector('[data-act="copyLogs"]')?.addEventListener('click', async () => {
+        const text = JSON.stringify(store.data().logs || [], null, 2);
+        try {
+            await navigator.clipboard.writeText(text);
+            toast('已复制，可以贴给别人看');
+        } catch {
+            // 移动端剪贴板可能被拦，退回手动选
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;top:10%;left:5%;width:90%;height:60%;z-index:99999';
+            document.body.appendChild(ta);
+            ta.select();
+            toast('复制不了，已摊开，手动全选复制后点空白处关闭', true);
+            ta.addEventListener('blur', () => ta.remove());
+        }
+    });
+    pane.querySelector('[data-act="clearLogs"]')?.addEventListener('click', () => {
+        if (!confirm('清空日志？')) return;
+        store.clearLogs();
+        refresh();
+    });
+}
+
 function bindSettings(pane) {
     const s = store.settings();
+    bindLogs(pane);
 
     // 普通字段
     pane.querySelectorAll('[data-s]').forEach(el => {

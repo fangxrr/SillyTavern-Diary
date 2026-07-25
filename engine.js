@@ -179,14 +179,36 @@ export async function tagDates(messages) {
     }
     store.save();
 
-    // 没标到的沿用上一条
+    // 收尾：套两条硬约束，挡掉模型的离谱判断
+    //   1. 不能早于故事起始日
+    //   2. 不能比上一条更早（故事时间线是往前走的）
+    // 被改动的都记下来，出问题时能看出是哪一步歪的。
+    const fixes = [];
     let last = d.startDate || '';
-    return messages.map(m => {
+    const tagged = messages.map((m, i) => {
         const uid = store.uidOf(m);
-        const date = d.dateIndex[uid] || last;
+        const raw = d.dateIndex[uid] || '';
+        let date = raw || last;
+
+        if (d.startDate && date && date < d.startDate) {
+            fixes.push({ i, uid, from: date, to: d.startDate, why: '早于起始日' });
+            date = d.startDate;
+        }
+        if (last && date && date < last) {
+            fixes.push({ i, uid, from: date, to: last, why: '比上一条更早' });
+            date = last;
+        }
         if (date) last = date;
-        return { msg: m, uid, date, from: d.dateIndex[uid + ':from'] || '' };
+        return { msg: m, uid, date, raw, from: d.dateIndex[uid + ':from'] || '' };
     });
+
+    if (fixes.length) {
+        store.addLog({ kind: '日期已修正', count: fixes.length, fixes });
+        // 修正后的结果写回缓存，免得下次再算一遍
+        for (const t of tagged) if (t.date) d.dateIndex[t.uid] = t.date;
+        store.save();
+    }
+    return tagged;
 }
 
 /**
@@ -262,6 +284,7 @@ function groupByDate(tagged) {
 export async function write({ messages, date, spanFrom = '', source = 'auto' }) {
     const s = store.settings();
     const prompt = await ctxLib.buildWritePrompt(date, messages);
+    const body = prompt[0].content;
     const raw = await api.chat(s.apiWrite, prompt);
     const { title, text } = splitTitle(raw);
 
@@ -270,8 +293,38 @@ export async function write({ messages, date, spanFrom = '', source = 'auto' }) 
         startUid: store.uidOf(messages[0]),
         endUid: store.uidOf(messages.at(-1)),
     });
+    store.addLog(await auditOf('写日记', date, messages, body, raw, entry.id));
     emit('entry');
     return entry;
+}
+
+/** 把这次生成的来龙去脉整理成一条日志 */
+async function auditOf(kind, date, messages, promptBody, reply, entryId) {
+    const world = await ctxLib.readWorld();
+    const memory = await ctxLib.readMemory();
+    return {
+        kind,
+        date,
+        entryId,
+        楼层: messages.map(m => store.indexOfUid(store.uidOf(m))).join(', '),
+        条数: messages.length,
+        每条: messages.map(m => {
+            const uid = store.uidOf(m);
+            const body = ctxLib.cleanText(m);
+            return {
+                楼: store.indexOfUid(uid),
+                谁: m.is_user ? '用户' : (m.name || '角色'),
+                日期: store.data().dateIndex[uid] || '(沿用上一条)',
+                时间片段: ctxLib.extractTime(m) || '(没抠到)',
+                正文字数: body.length,
+                正文开头: body.slice(0, 60),
+            };
+        }),
+        注入: { 世界书: world.length, 前情: memory.length },
+        提示词字数: promptBody.length,
+        提示词开头: promptBody.slice(0, 1200),
+        回复字数: String(reply).length,
+    };
 }
 
 /**
@@ -295,7 +348,8 @@ async function extendEntry(entry, group) {
     if (!full.length) return;
 
     const s = store.settings();
-    const raw = await api.chat(s.apiWrite, await ctxLib.buildWritePrompt(entry.date, full));
+    const prompt = await ctxLib.buildWritePrompt(entry.date, full);
+    const raw = await api.chat(s.apiWrite, prompt);
     const { title, text } = splitTitle(raw);
     store.updateEntry(entry.id, {
         title: title || entry.title,
@@ -303,6 +357,7 @@ async function extendEntry(entry, group) {
         endUid,
         spanFrom: group.spanFrom || entry.spanFrom,
     });
+    store.addLog(await auditOf('整天重写', entry.date, full, prompt[0].content, raw, entry.id));
     emit('entry');
 }
 

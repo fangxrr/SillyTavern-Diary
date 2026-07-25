@@ -311,6 +311,18 @@ body.dy-lock { overflow: hidden; }
 }
 .dy-peek[data-on] { display: block; }
 
+.dy-logs { margin-bottom: 10px; }
+.dy-log { border: 1px solid var(--dy-rule-2); border-radius: 2px; background: var(--dy-raise); margin-bottom: 6px; }
+.dy-log summary { padding: 9px 12px; font-size: 11px; color: var(--dy-dim); cursor: pointer; line-height: 1.6; }
+.dy-log summary:hover { color: var(--dy-text); }
+.dy-log__k { display: inline-block; border: 1px solid var(--dy-rule); border-radius: 1px; padding: 1px 6px; margin-right: 8px; color: var(--dy-mid); font-size: 10px; }
+.dy-log pre {
+    margin: 0; padding: 10px 12px; border-top: 1px solid var(--dy-rule-2);
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; line-height: 1.7;
+    color: #9a9a9a; white-space: pre-wrap; word-break: break-all;
+    max-height: 320px; overflow-y: auto;
+}
+
 /* 楼层上的收藏按钮 */
 .dy-star { opacity: .35; transition: opacity .15s, color .15s; }
 .dy-star:hover { opacity: 1; }
