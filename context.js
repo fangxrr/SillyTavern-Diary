@@ -143,6 +143,35 @@ function budget(text, maxTokens) {
     return '…（较早的内容已略去）\n\n' + text.slice(-limit);
 }
 
+/**
+ * 拿一条真实消息试跑正文规则，让用户看清到底读到了什么。
+ * 返回 { mode, text, raw }：mode 说明这次是正则命中还是退回了默认清洗。
+ */
+export function previewExtract(msg) {
+    const s = settings();
+    const raw = String(msg?.mes || '');
+    const pattern = s.contentRegex?.trim();
+
+    if (pattern) {
+        try {
+            const re = new RegExp(pattern, 'gi');
+            const hits = [];
+            let m;
+            while ((m = re.exec(raw)) !== null) {
+                hits.push(m[1] ?? m[0]);
+                if (m.index === re.lastIndex) re.lastIndex++;
+            }
+            if (hits.length) {
+                return { mode: 'regex', hits: hits.length, text: tidy(hits.join('\n\n')), raw };
+            }
+            return { mode: 'miss', text: cleanText(msg), raw };
+        } catch (e) {
+            return { mode: 'bad', text: cleanText(msg), raw, error: e.message };
+        }
+    }
+    return { mode: 'clean', text: cleanText(msg), raw };
+}
+
 /* ────────── 时间片段 ────────── */
 
 /**

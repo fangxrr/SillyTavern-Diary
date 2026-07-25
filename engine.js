@@ -232,11 +232,7 @@ export async function write({ messages, date, spanFrom = '', source = 'auto' }) 
     const s = store.settings();
     const prompt = await ctxLib.buildWritePrompt(date, messages);
     const raw = await api.chat(s.apiWrite, prompt);
-
-    let title = '', text = raw.trim();
-    const m = text.match(/^\s*(?:标题|title)\s*[:：]\s*(.+)\s*\n+/i);
-    if (m) { title = m[1].trim(); text = text.slice(m[0].length).trim(); }
-    if (!title) title = text.split('\n')[0].slice(0, 24);
+    const { title, text } = splitTitle(raw);
 
     const entry = store.addEntry({
         date, title, text, source, spanFrom,
@@ -245,6 +241,55 @@ export async function write({ messages, date, spanFrom = '', source = 'auto' }) 
     });
     emit('entry');
     return entry;
+}
+
+/**
+ * 这一天已有日记，又来了新楼层：从这篇日记的起点一路读到新的终点，
+ * 拿一整天的内容重写，保证日记覆盖当天全部。
+ */
+async function extendEntry(entry, group) {
+    const chat = getContext().chat || [];
+    const endUid = group.items.at(-1).uid;
+    let a = store.indexOfUid(entry.startUid);
+    const b = store.indexOfUid(endUid);
+
+    // 起点没了（源楼层被删）就退回这一组的开头
+    if (a < 0) a = store.indexOfUid(group.items[0].uid);
+    if (a < 0 || b < a) {
+        store.updateEntry(entry.id, { endUid });
+        return;
+    }
+
+    const full = chat.slice(a, b + 1).filter(ctxLib.worthReading);
+    if (!full.length) return;
+
+    const s = store.settings();
+    const raw = await api.chat(s.apiWrite, await ctxLib.buildWritePrompt(entry.date, full));
+    const { title, text } = splitTitle(raw);
+    store.updateEntry(entry.id, {
+        title: title || entry.title,
+        text,
+        endUid,
+        spanFrom: group.spanFrom || entry.spanFrom,
+    });
+    emit('entry');
+}
+
+/** 把「标题：xxx」从正文里拆出来 */
+function splitTitle(raw) {
+    let title = '', text = String(raw).trim();
+    const m = text.match(/^\s*(?:标题|title)\s*[:：]\s*(.+)\s*\n+/i);
+    if (m) { title = m[1].trim(); text = text.slice(m[0].length).trim(); }
+    if (!title) title = text.split('\n')[0].slice(0, 24);
+    return { title, text };
+}
+
+/** 某篇日记当前覆盖了哪些楼层，给界面显示用 */
+export function coverageOf(entry) {
+    const a = store.indexOfUid(entry.startUid);
+    const b = store.indexOfUid(entry.endUid);
+    if (a < 0 || b < a) return null;
+    return { from: a, to: b, count: b - a + 1 };
 }
 
 /* ────────── 自动跑一轮 ────────── */
@@ -276,10 +321,11 @@ export async function tick() {
 
         for (const g of closed) {
             if (!g.date) continue;
-            // 这天已经写过就并进去，不重复开一篇
             const exist = store.entryOnDate(g.date).find(e => e.source === 'auto');
             if (exist) {
-                store.updateEntry(exist.id, { endUid: g.items.at(-1).uid });
+                // 这天已经写过了。把新楼层并进来，重读这一天的全部内容重写，
+                // 否则日记会停在先前那几层，后面发生的事进不去。
+                await extendEntry(exist, g);
                 continue;
             }
             await write({
@@ -342,9 +388,7 @@ export async function rewrite(id) {
     try {
         const s = store.settings();
         const raw = await api.chat(s.apiWrite, await ctxLib.buildWritePrompt(e.date, msgs));
-        let title = '', text = raw.trim();
-        const m = text.match(/^\s*(?:标题|title)\s*[:：]\s*(.+)\s*\n+/i);
-        if (m) { title = m[1].trim(); text = text.slice(m[0].length).trim(); }
+        const { title, text } = splitTitle(raw);
         store.updateEntry(id, { title: title || e.title, text });
         emit('entry');
     } finally {

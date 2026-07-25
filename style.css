@@ -302,6 +302,14 @@ body.dy-lock { overflow: hidden; }
 
 .dy-probe { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .dy-probe__out { font-size: 10.5px; color: #5e5e5e; line-height: 1.6; }
+.dy-peek {
+    display: none; margin: 8px 0 0; padding: 10px 12px;
+    background: var(--dy-sunk); border: 1px solid var(--dy-rule-2); border-radius: 2px;
+    font-family: var(--dy-serif); font-size: 11.5px; line-height: 1.85; color: #a8a8a8;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 200px; overflow-y: auto;
+}
+.dy-peek[data-on] { display: block; }
 
 /* 楼层上的收藏按钮 */
 .dy-star { opacity: .35; transition: opacity .15s, color .15s; }

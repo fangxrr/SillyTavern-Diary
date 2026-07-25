@@ -581,7 +581,10 @@ async function renderSettings(pane) {
         <div class="dy-row"><div class="dy-row__t"><label>正文在哪</label>
           <p style="margin-bottom:8px">填了就只取匹配的部分；留空用上面的默认清洗。</p>
           <input type="text" class="dy-wide dy-mono" data-s="contentRegex" value="${esc(s.contentRegex)}"
-            placeholder="&lt;content&gt;([\\s\\S]*?)&lt;/content&gt;"></div></div>
+            placeholder="&lt;content&gt;([\\s\\S]*?)&lt;/content&gt;">
+          <div class="dy-probe"><button class="dy-btn dy-btn--xs" data-act="tryContent">试一下，看它读到什么</button>
+            <span class="dy-probe__out" data-out="content"></span></div>
+          <pre class="dy-peek" data-peek="content"></pre></div></div>
         <div class="dy-row"><div class="dy-row__t"><label>时间在哪</label>
           <p style="margin-bottom:8px">填了就只从这一小段读日期，不必把整段正文喂给模型，省很多。</p>
           <input type="text" class="dy-wide dy-mono" data-s="timeRegex" value="${esc(s.timeRegex)}"
@@ -740,6 +743,26 @@ function bindSettings(pane) {
             catch (e) { toast(e.message, true); }
             b.textContent = '测试连接'; b.disabled = false;
         });
+    });
+
+    // 试跑正文规则：拿最后一条角色回复实测，把结果摊开给用户看
+    pane.querySelector('[data-act="tryContent"]')?.addEventListener('click', () => {
+        const out = pane.querySelector('[data-out="content"]');
+        const peek = pane.querySelector('[data-peek="content"]');
+        const chat = getContext().chat || [];
+        const msg = [...chat].reverse().find(m => !m.is_user && String(m.mes || '').trim());
+        if (!msg) { out.textContent = '聊天里还没有角色回复'; return; }
+
+        const r = ctxLib.previewExtract(msg);
+        const shrink = `${msg.mes.length} 字 → ${r.text.length} 字`;
+        out.textContent = {
+            regex: `正则命中 ${r.hits} 处，${shrink}`,
+            miss: `⚠ 正则一处都没匹配到，已退回默认清洗（${shrink}）`,
+            bad: `⚠ 正则写错了：${r.error}`,
+            clean: `没填正则，用默认清洗，${shrink}`,
+        }[r.mode];
+        peek.textContent = r.text.slice(0, 600) + (r.text.length > 600 ? '\n…' : '');
+        peek.setAttribute('data-on', '');
     });
 
     // 恢复默认提示词
