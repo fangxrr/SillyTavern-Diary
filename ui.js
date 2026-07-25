@@ -582,7 +582,8 @@ async function renderSettings(pane) {
           <p style="margin-bottom:8px">填了就只取匹配的部分；留空用上面的默认清洗。</p>
           <input type="text" class="dy-wide dy-mono" data-s="contentRegex" value="${esc(s.contentRegex)}"
             placeholder="&lt;content&gt;([\\s\\S]*?)&lt;/content&gt;">
-          <div class="dy-probe"><button class="dy-btn dy-btn--xs" data-act="tryContent">试一下，看它读到什么</button>
+          <div class="dy-probe"><button class="dy-btn dy-btn--xs" data-act="probeContent">让它读一条，猜猜看</button>
+            <button class="dy-btn dy-btn--xs" data-act="tryContent">试一下，看它读到什么</button>
             <span class="dy-probe__out" data-out="content"></span></div>
           <pre class="dy-peek" data-peek="content"></pre></div></div>
         <div class="dy-row"><div class="dy-row__t"><label>时间在哪</label>
@@ -743,6 +744,24 @@ function bindSettings(pane) {
             catch (e) { toast(e.message, true); }
             b.textContent = '测试连接'; b.disabled = false;
         });
+    });
+
+    // 猜正文正则：填进框里，顺手跑一次预览让用户当场看结果
+    pane.querySelector('[data-act="probeContent"]')?.addEventListener('click', async ev => {
+        const b = ev.currentTarget;
+        const out = pane.querySelector('[data-out="content"]');
+        b.textContent = '读…'; b.disabled = true; out.textContent = '';
+        try {
+            const r = await engine.probeContentRegex();
+            pane.querySelector('[data-s="contentRegex"]').value = r.regex;
+            s.contentRegex = r.regex;
+            store.saveSettings();
+            out.textContent = r.note ? `${r.note}` : '已填入';
+            pane.querySelector('[data-act="tryContent"]').click();
+        } catch (e) {
+            out.textContent = e.message;
+        }
+        b.textContent = '让它读一条，猜猜看'; b.disabled = false;
     });
 
     // 试跑正文规则：拿最后一条角色回复实测，把结果摊开给用户看

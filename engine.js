@@ -190,6 +190,37 @@ export async function tagDates(messages) {
 }
 
 /**
+ * 读一条角色消息，猜出正文在哪，返回正则建议。
+ * 会先验一遍这条正则是否真的抓得到东西，抓不到就不给。
+ */
+export async function probeContentRegex() {
+    const msg = lastCharMessage();
+    if (!msg) throw new Error('聊天里还没有角色回复');
+
+    const s = store.settings();
+    const out = await api.chat(s.apiWrite, ctxLib.buildContentProbePrompt(msg));
+    const r = api.parseJson(out);
+    if (!r?.regex) throw new Error(r?.note || '没找到清晰的正文边界，得手动填');
+
+    let re;
+    try { re = new RegExp(r.regex, 'i'); } catch { throw new Error('模型给的正则不合法，手动填吧'); }
+
+    const hit = re.exec(String(msg.mes || ''));
+    if (!hit) throw new Error('模型给的正则匹配不到，手动填吧');
+
+    const got = String(hit[1] ?? hit[0]);
+    if (got.length < 40) throw new Error('这条正则只抓到一点点，不像正文，手动填吧');
+
+    return { regex: r.regex, note: r.note || '', sample: got.slice(0, 40) };
+}
+
+/** 最后一条有内容的角色消息 */
+function lastCharMessage() {
+    const chat = getContext().chat || [];
+    return [...chat].reverse().find(m => !m.is_user && String(m.mes || '').trim()) || null;
+}
+
+/**
  * 读一条角色消息，猜出时间标签在哪，返回正则建议。
  * 只给建议，填不填由用户决定。
  */
