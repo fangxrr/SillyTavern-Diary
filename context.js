@@ -19,37 +19,52 @@ export function cleanText(msg) {
     const s = settings();
     let text = String(msg?.mes || '');
 
-    // 自定义正则优先：填了就只取匹配到的部分
+    // 第一层：正则圈定范围
     if (s.contentRegex?.trim()) {
-        try {
-            const re = new RegExp(s.contentRegex, 'gi');
-            const hits = [];
-            let m;
-            while ((m = re.exec(text)) !== null) {
-                hits.push(m[1] ?? m[0]);
-                if (m.index === re.lastIndex) re.lastIndex++;
-            }
-            if (hits.length) return tidy(hits.join('\n\n'));
-        } catch { /* 正则写错了就退回默认清洗 */ }
+        const hits = runRegex(s.contentRegex, text);
+        if (hits.length) text = hits.join('\n\n');
     }
 
+    // 第二层：把圈定范围内残留的噪音再剥一遍
+    // （draft、检查记录这类东西常常就藏在 <content> 里面）
     if (!s.clean) return tidy(text);
+    return tidy(scrub(text));
+}
 
-    // 剥标签块
+/** 跑一条正则，把所有捕获结果收集起来 */
+function runRegex(pattern, text) {
+    try {
+        const re = new RegExp(pattern, 'gi');
+        const hits = [];
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            hits.push(m[1] ?? m[0]);
+            if (m.index === re.lastIndex) re.lastIndex++;
+        }
+        return hits;
+    } catch {
+        return [];   // 正则写错了，当作没填
+    }
+}
+
+/** 剥掉各种非正文内容 */
+function scrub(text) {
+    // HTML 注释 —— draft、修改记录、自检清单常藏在这里
+    text = text.replace(/<!--[\s\S]*?-->/g, '');
+    // 标签块
     for (const tag of NOISE_TAGS) {
         text = text.replace(new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, 'gi'), '');
         text = text.replace(new RegExp(`<${tag}[^>]*\\/?>`, 'gi'), '');
     }
-    // 剥 markdown 代码块（状态栏常这么写）
+    // markdown 代码块（状态栏常这么写）
     text = text.replace(/```[\s\S]*?```/g, '');
-    // 剥 <details> 折叠块
+    // <details> 折叠块
     text = text.replace(/<details[\s\S]*?<\/details>/gi, '');
-    // 剥表格行
+    // 表格行
     text = text.replace(/^\s*\|.*\|\s*$/gm, '');
-    // 剥剩余 HTML 标签，保留文字
+    // 剩余 HTML 标签，保留文字
     text = text.replace(/<\/?[a-z][^>]*>/gi, '');
-
-    return tidy(text);
+    return text;
 }
 
 function tidy(t) {
@@ -151,25 +166,23 @@ export function previewExtract(msg) {
     const s = settings();
     const raw = String(msg?.mes || '');
     const pattern = s.contentRegex?.trim();
+    const final = cleanText(msg);
 
     if (pattern) {
-        try {
-            const re = new RegExp(pattern, 'gi');
-            const hits = [];
-            let m;
-            while ((m = re.exec(raw)) !== null) {
-                hits.push(m[1] ?? m[0]);
-                if (m.index === re.lastIndex) re.lastIndex++;
-            }
-            if (hits.length) {
-                return { mode: 'regex', hits: hits.length, text: tidy(hits.join('\n\n')), raw };
-            }
-            return { mode: 'miss', text: cleanText(msg), raw };
-        } catch (e) {
-            return { mode: 'bad', text: cleanText(msg), raw, error: e.message };
-        }
+        try { new RegExp(pattern); }
+        catch (e) { return { mode: 'bad', text: final, raw, error: e.message }; }
+
+        const hits = runRegex(pattern, raw);
+        if (!hits.length) return { mode: 'miss', text: final, raw };
+        return {
+            mode: 'regex',
+            hits: hits.length,
+            afterRegex: hits.join('\n\n').length,
+            text: final,
+            raw,
+        };
     }
-    return { mode: 'clean', text: cleanText(msg), raw };
+    return { mode: 'clean', text: final, raw };
 }
 
 /* ────────── 时间片段 ────────── */

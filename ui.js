@@ -773,12 +773,12 @@ function bindSettings(pane) {
         if (!msg) { out.textContent = '聊天里还没有角色回复'; return; }
 
         const r = ctxLib.previewExtract(msg);
-        const shrink = `${msg.mes.length} 字 → ${r.text.length} 字`;
+        const n = msg.mes.length;
         out.textContent = {
-            regex: `正则命中 ${r.hits} 处，${shrink}`,
-            miss: `⚠ 正则一处都没匹配到，已退回默认清洗（${shrink}）`,
+            regex: `正则命中 ${r.hits} 处，${n} → ${r.afterRegex} 字，清洗后 ${r.text.length} 字`,
+            miss: `⚠ 正则一处都没匹配到，已退回默认清洗（${n} → ${r.text.length} 字）`,
             bad: `⚠ 正则写错了：${r.error}`,
-            clean: `没填正则，用默认清洗，${shrink}`,
+            clean: `没填正则，用默认清洗，${n} → ${r.text.length} 字`,
         }[r.mode];
         peek.textContent = r.text.slice(0, 600) + (r.text.length > 600 ? '\n…' : '');
         peek.setAttribute('data-on', '');
