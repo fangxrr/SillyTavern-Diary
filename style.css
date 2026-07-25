@@ -307,7 +307,7 @@ body.dy-lock { overflow: hidden; }
     background: var(--dy-sunk); border: 1px solid var(--dy-rule-2); border-radius: 2px;
     font-family: var(--dy-serif); font-size: 11.5px; line-height: 1.85; color: #a8a8a8;
     white-space: pre-wrap; word-break: break-word;
-    max-height: 200px; overflow-y: auto;
+    max-height: 280px; overflow-y: auto;
 }
 .dy-peek[data-on] { display: block; }
 

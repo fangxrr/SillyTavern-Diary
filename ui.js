@@ -583,7 +583,6 @@ async function renderSettings(pane) {
           <input type="text" class="dy-wide dy-mono" data-s="contentRegex" value="${esc(s.contentRegex)}"
             placeholder="&lt;content&gt;([\\s\\S]*?)&lt;/content&gt;">
           <div class="dy-probe"><button class="dy-btn dy-btn--xs" data-act="probeContent">让它读一条，猜猜看</button>
-            <button class="dy-btn dy-btn--xs" data-act="tryContent">试一下，看它读到什么</button>
             <span class="dy-probe__out" data-out="content"></span></div>
           <pre class="dy-peek" data-peek="content"></pre></div></div>
         <div class="dy-row"><div class="dy-row__t"><label>时间在哪</label>
@@ -664,6 +663,33 @@ function setDeep(obj, path, val) {
     let cur = obj;
     for (let i = 0; i < parts.length - 1; i++) cur = cur[parts[i]];
     cur[parts.at(-1)] = val;
+}
+
+/** 拿最新一条角色回复实测正文规则，把结果摊开。纯本地，不花钱，可以随便跑。 */
+function runContentPreview(pane) {
+    const out = pane.querySelector('[data-out="content"]');
+    const peek = pane.querySelector('[data-peek="content"]');
+    if (!out || !peek) return;
+
+    const chat = getContext().chat || [];
+    const msg = [...chat].reverse().find(m => !m.is_user && String(m.mes || '').trim());
+    if (!msg) { out.textContent = '聊天里还没有角色回复'; return; }
+
+    const r = ctxLib.previewExtract(msg);
+    const n = msg.mes.length;
+    out.textContent = {
+        regex: `正则命中 ${r.hits} 处，${n} → ${r.afterRegex} 字，清洗后 ${r.text.length} 字`,
+        miss: `⚠ 正则一处都没匹配到，已退回默认清洗（${n} → ${r.text.length} 字）`,
+        bad: `⚠ 正则写错了：${r.error}`,
+        clean: `没填正则，用默认清洗，${n} → ${r.text.length} 字`,
+    }[r.mode];
+
+    const LIMIT = 3000;
+    const over = r.text.length - LIMIT;
+    peek.textContent = over > 0
+        ? r.text.slice(0, LIMIT) + `\n\n…… 这里只是预览，后面还有 ${over} 字，实际会全部用上`
+        : r.text;
+    peek.setAttribute('data-on', '');
 }
 
 function bindSettings(pane) {
@@ -756,32 +782,12 @@ function bindSettings(pane) {
             pane.querySelector('[data-s="contentRegex"]').value = r.regex;
             s.contentRegex = r.regex;
             store.saveSettings();
-            out.textContent = r.note ? `${r.note}` : '已填入';
-            pane.querySelector('[data-act="tryContent"]').click();
+            runContentPreview(pane);
+            if (r.note) out.textContent = `${r.note}　|　${out.textContent}`;
         } catch (e) {
             out.textContent = e.message;
         }
         b.textContent = '让它读一条，猜猜看'; b.disabled = false;
-    });
-
-    // 试跑正文规则：拿最后一条角色回复实测，把结果摊开给用户看
-    pane.querySelector('[data-act="tryContent"]')?.addEventListener('click', () => {
-        const out = pane.querySelector('[data-out="content"]');
-        const peek = pane.querySelector('[data-peek="content"]');
-        const chat = getContext().chat || [];
-        const msg = [...chat].reverse().find(m => !m.is_user && String(m.mes || '').trim());
-        if (!msg) { out.textContent = '聊天里还没有角色回复'; return; }
-
-        const r = ctxLib.previewExtract(msg);
-        const n = msg.mes.length;
-        out.textContent = {
-            regex: `正则命中 ${r.hits} 处，${n} → ${r.afterRegex} 字，清洗后 ${r.text.length} 字`,
-            miss: `⚠ 正则一处都没匹配到，已退回默认清洗（${n} → ${r.text.length} 字）`,
-            bad: `⚠ 正则写错了：${r.error}`,
-            clean: `没填正则，用默认清洗，${n} → ${r.text.length} 字`,
-        }[r.mode];
-        peek.textContent = r.text.slice(0, 600) + (r.text.length > 600 ? '\n…' : '');
-        peek.setAttribute('data-on', '');
     });
 
     // 恢复默认提示词
