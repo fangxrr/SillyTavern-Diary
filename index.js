@@ -13,12 +13,6 @@ import * as ui from './ui.js';
 
 const NAME = '日记本';
 
-let deco = null;
-function scheduleDecorate() {
-    clearTimeout(deco);
-    deco = setTimeout(() => ui.decorateMessages(), 120);
-}
-
 let ticking = null;
 function scheduleTick() {
     clearTimeout(ticking);
@@ -28,7 +22,6 @@ function scheduleTick() {
 async function onChatChanged() {
     const touched = store.backfillUids();
     if (touched) await store.saveChatFile();
-    scheduleDecorate();
     ui.refresh();
 }
 
@@ -36,17 +29,6 @@ function boot() {
     ui.addWandButton();
 
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
-
-    // 渲染完补收藏按钮
-    for (const ev of [
-        event_types.CHARACTER_MESSAGE_RENDERED,
-        event_types.USER_MESSAGE_RENDERED,
-        event_types.MESSAGE_SWIPED,
-        event_types.MESSAGE_EDITED,
-        event_types.MESSAGE_DELETED,
-    ]) {
-        if (ev) eventSource.on(ev, scheduleDecorate);
-    }
 
     // 触发时机
     // waitNext 开着：等用户发出下一条，说明上一条定稿了
@@ -70,7 +52,7 @@ function boot() {
     // 兜底：魔棒菜单可能比扩展晚建好
     const retry = setInterval(() => {
         ui.addWandButton();
-        if (document.getElementById('dy-wand')) clearInterval(retry);
+        if (document.getElementById('tw-wand')) clearInterval(retry);
     }, 1000);
     setTimeout(() => clearInterval(retry), 15000);
 

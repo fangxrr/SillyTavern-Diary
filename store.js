@@ -51,7 +51,6 @@ function blank() {
         version: 1,
         startDate: '',     // 故事起始日 YYYY-MM-DD
         entries: [],       // 日记
-        favorites: [],     // 收藏
         marks: {},         // { 'YYYY-MM-DD': '情人节' }
         dateIndex: {},     // { uid: 'YYYY-MM-DD' } 已检测出的楼层日期
         cursor: null,      // 已处理到哪条消息的 uid
@@ -144,53 +143,50 @@ export function entryOnDate(date) {
     return data().entries.filter(e => e.date === date);
 }
 
-/* ────────── 收藏 ────────── */
-
-export function isFav(uid) {
-    return data().favorites.some(f => f.uid === uid);
-}
-
-export function toggleFav(msg) {
-    const d = data();
-    const uid = uidOf(msg);
-    const i = d.favorites.findIndex(f => f.uid === uid);
-    if (i >= 0) {
-        d.favorites.splice(i, 1);
-        save();
-        return false;
-    }
-    d.favorites.push({
-        id: newId(),
-        uid,
-        name: '',                                   // 用户自命名
-        snapshot: String(msg.mes || '').slice(0, 4000), // 原文快照，源楼层删了也还在
-        speaker: msg.name || '',
-        isUser: !!msg.is_user,
-        date: d.dateIndex[uid] || '',
-        createdAt: Date.now(),
-    });
-    save();
-    return true;
-}
-
-export function updateFav(id, patch) {
-    const f = data().favorites.find(x => x.id === id);
-    if (f) { Object.assign(f, patch); save(); }
-    return f;
-}
-
-export function removeFav(id) {
-    const d = data();
-    const i = d.favorites.findIndex(x => x.id === id);
-    if (i >= 0) { d.favorites.splice(i, 1); save(); }
-}
-
 /* ────────── 日期标记 ────────── */
 
 export function setMark(date, label) {
     const d = data();
     if (label) d.marks[date] = label; else delete d.marks[date];
     save();
+}
+
+/* ────────── 每张卡自己的规则 ────────── */
+
+/** 当前角色卡的标识。用头像文件名，改名不影响。 */
+export function charKey() {
+    const ctx = getContext();
+    const c = ctx?.characters?.[ctx.characterId];
+    return c?.avatar || c?.name || '';
+}
+
+/**
+ * 正文正则和时间正则跟着角色卡走，不跟着全局走。
+ * 不同的卡格式不一样，共用一套必然抠错。
+ */
+export function charRules() {
+    const s = settings();
+    if (!s.perChar || typeof s.perChar !== 'object') s.perChar = {};
+
+    const k = charKey();
+    if (!k) return { contentRegex: '', timeRegex: '' };
+
+    if (!s.perChar[k]) {
+        // 从旧版的全局设置迁一次，之后就各归各的
+        s.perChar[k] = {
+            contentRegex: s.contentRegex || '',
+            timeRegex: s.timeRegex || '',
+        };
+        saveSettings();
+    }
+    return s.perChar[k];
+}
+
+export function saveCharRules(patch) {
+    const k = charKey();
+    if (!k) return;
+    Object.assign(charRules(), patch);
+    saveSettings();
 }
 
 /* ────────── 全局设置 ────────── */
@@ -234,8 +230,9 @@ function defaultSettings() {
         includeGreeting: true,
         waitNext: true,
         clean: true,
-        contentRegex: '',
+        contentRegex: '',   // 旧版遗留，只用于首次迁移到 perChar
         timeRegex: '',
+        perChar: {},        // { 角色标识: { contentRegex, timeRegex } }
         startYearFallback: new Date().getFullYear(),
 
         apiTime: {

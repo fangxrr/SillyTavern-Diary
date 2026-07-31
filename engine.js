@@ -102,27 +102,41 @@ const EN_MONTH = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep',
  *   2007年3月15日 / 2007-03-15 / 2007/3/15 / 2007.3.15
  *   3月15日（缺年份就补上故事的年份）
  *   March 15, 2007 / 15 Mar 2007
+ *
+ * 片段里出现多个日期时（比如「2023年5月6日~5月10日」这种跨天范围），
+ * 取位置最靠后的那个 —— 和「跨天记在最后一天」的规则一致。
  */
 function parseLocalDate(text, year) {
     const t = String(text || '');
+    const found = [];
+    let m;
 
-    let m = t.match(/(\d{4})\s*[年\-\/.]\s*(\d{1,2})\s*[月\-\/.]\s*(\d{1,2})/);
-    if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+    const reFull = /(\d{4})\s*[年\-\/.]\s*(\d{1,2})\s*[月\-\/.]\s*(\d{1,2})/g;
+    while ((m = reFull.exec(t)) !== null) {
+        found.push({ at: m.index, date: `${m[1]}-${pad(m[2])}-${pad(m[3])}`, y: m[1] });
+    }
+    // 后面那些不带年份的，沿用片段里最后出现过的年份
+    const carry = found.length ? found.at(-1).y : year;
 
-    m = t.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]/);
-    if (m) return `${year}-${pad(m[1])}-${pad(m[2])}`;
+    const reMd = /(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]/g;
+    while ((m = reMd.exec(t)) !== null) {
+        found.push({ at: m.index, date: `${carry}-${pad(m[1])}-${pad(m[2])}` });
+    }
 
-    m = t.match(/([a-z]{3,9})\.?\s+(\d{1,2})(?:\s*,)?\s*(\d{4})?/i);
-    if (m) {
+    const reEn1 = /([a-z]{3,9})\.?\s+(\d{1,2})(?:\s*,)?\s*(\d{4})?/gi;
+    while ((m = reEn1.exec(t)) !== null) {
         const mi = EN_MONTH.indexOf(m[1].slice(0, 3).toLowerCase());
-        if (mi >= 0) return `${m[3] || year}-${pad(mi + 1)}-${pad(m[2])}`;
+        if (mi >= 0) found.push({ at: m.index, date: `${m[3] || carry}-${pad(mi + 1)}-${pad(m[2])}` });
     }
-    m = t.match(/(\d{1,2})\s+([a-z]{3,9})\.?\s*(\d{4})?/i);
-    if (m) {
+    const reEn2 = /(\d{1,2})\s+([a-z]{3,9})\.?\s*(\d{4})?/gi;
+    while ((m = reEn2.exec(t)) !== null) {
         const mi = EN_MONTH.indexOf(m[2].slice(0, 3).toLowerCase());
-        if (mi >= 0) return `${m[3] || year}-${pad(mi + 1)}-${pad(m[1])}`;
+        if (mi >= 0) found.push({ at: m.index, date: `${m[3] || carry}-${pad(mi + 1)}-${pad(m[1])}` });
     }
-    return '';
+
+    if (!found.length) return '';
+    found.sort((a, b) => a.at - b.at);
+    return found.at(-1).date;
 }
 
 /* ────────── 日期检测 ────────── */
@@ -315,6 +329,7 @@ async function auditOf(kind, date, messages, promptBody, r, entryId) {
         kind,
         date,
         entryId,
+        故事起始日: store.data().startDate || '(没设)',
         楼层: messages.map(m => store.indexOfUid(store.uidOf(m))).join(', '),
         条数: messages.length,
         每条: messages.map(m => {

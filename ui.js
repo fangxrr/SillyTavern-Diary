@@ -1,5 +1,9 @@
 /**
- * 界面层
+ * 界面层 —— 一台打字机 + 一墙便签
+ *
+ * 打字机是控制台，不是装饰：滚筒上的纸显示当前状态，
+ * 四个键切换便签墙 / 日历 / 设置 / 补写。
+ * 每篇日记是一张便签，点开摊成一整页。
  */
 
 import { getContext } from '../../../extensions.js';
@@ -11,335 +15,218 @@ import * as engine from './engine.js';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+const MON = ['—', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const cnDate = iso => {
+    const [y, m, d] = String(iso || '').split('-');
+    return y && m && d ? `${y} 年 ${+m} 月 ${+d} 日` : String(iso || '');
+};
+
 let root = null;
-let calCursor = null;   // 日历当前月 { y, m }
+let view = 'wall';
+let calCursor = null;
 
 function toast(msg, bad = false) {
     if (typeof toastr !== 'undefined') bad ? toastr.error(msg) : toastr.success(msg);
     else console.log('[日记本]', msg);
 }
 
-/* ══════════════ 魔棒入口 ══════════════ */
+/* ══════════════ 入口 ══════════════ */
 
 export function addWandButton() {
     const menu = document.getElementById('extensionsMenu');
-    if (!menu || document.getElementById('dy-wand')) return;
+    if (!menu || document.getElementById('tw-wand')) return;
     const el = document.createElement('div');
-    el.id = 'dy-wand';
+    el.id = 'tw-wand';
     el.className = 'list-group-item flex-container flexGap5 interactable';
     el.tabIndex = 0;
-    el.innerHTML = `<i class="fa-solid fa-book"></i><span>日记本</span>`;
-    el.addEventListener('click', () => open('cover'));
+    el.innerHTML = `<i class="fa-solid fa-keyboard"></i><span>日记本</span>`;
+    el.addEventListener('click', () => open());
     menu.appendChild(el);
 }
 
-/* ══════════════ 楼层收藏按钮 ══════════════ */
-
-export function decorateMessages() {
-    document.querySelectorAll('#chat .mes').forEach(node => {
-        const holder = node.querySelector('.mes_buttons');
-        if (!holder || holder.querySelector('.dy-star')) return;
-
-        const idx = Number(node.getAttribute('mesid'));
-        const msg = getContext().chat?.[idx];
-        if (!msg) return;
-
-        const uid = store.uidOf(msg);
-        const btn = document.createElement('div');
-        btn.className = 'dy-star mes_button fa-solid fa-bookmark interactable';
-        btn.title = '收藏这层';
-        if (store.isFav(uid)) btn.classList.add('dy-star--on');
-        btn.addEventListener('click', async e => {
-            e.stopPropagation();
-            const on = store.toggleFav(msg);
-            btn.classList.toggle('dy-star--on', on);
-            await store.saveChatFile();
-            toast(on ? '收进收藏夹了' : '已取消收藏');
-            if (root) refresh();
-        });
-        holder.prepend(btn);
-    });
-}
-
-/* ══════════════ 打开 / 关闭 ══════════════ */
-
-export function open(page = 'cover') {
+export function open() {
     if (!root) build();
-    root.classList.add('dy-on');
-    document.body.classList.add('dy-lock');
-    go(page);
+    root.classList.add('tw-on');
+    document.body.classList.add('tw-lock');
+    go(view);
 }
 
 export function close() {
-    root?.classList.remove('dy-on');
-    document.body.classList.remove('dy-lock');
+    root?.classList.remove('tw-on');
+    document.body.classList.remove('tw-lock');
 }
 
 function build() {
     root = document.createElement('div');
-    root.id = 'dy-root';
+    root.id = 'tw-root';
     root.innerHTML = `
-      <div class="dy-scrim"></div>
-      <div class="dy-stage">
-        <div class="dy-book">
-          <button class="dy-x" title="关闭日记本">×</button>
-          <div class="dy-cover"></div>
-          <div class="dy-marks"></div>
-          <div class="dy-inner">
-            <div class="dy-top">
-              <button class="dy-close">← 合上</button>
-              <div class="dy-top__t"></div>
-              <div class="dy-top__m"></div>
+      <div class="tw-room">
+        <button class="tw-shut" title="收起">&times;</button>
+        <div class="tw-wall"></div>
+        <div class="tw-machine">
+          <div class="tw-feed"><span class="tw-feed__dot"></span><span class="tw-feed__t"></span></div>
+          <div class="tw-platen"></div>
+          <div class="tw-deck">
+            <div class="tw-brand"></div>
+            <div class="tw-keys">
+              <button class="tw-key" data-k="wall">便签 <b></b></button>
+              <button class="tw-key" data-k="cal">日历</button>
+              <button class="tw-key" data-k="set">设置</button>
+              <button class="tw-key tw-key--ribbon" data-k="new">补写</button>
             </div>
-            <div class="dy-pane"></div>
           </div>
         </div>
-      </div>`;
+      </div>
+      <div class="tw-open"><div class="tw-page"></div></div>`;
     document.body.appendChild(root);
-    root.querySelector('.dy-scrim').addEventListener('click', close);
-    root.querySelector('.dy-x').addEventListener('click', close);
-    root.querySelector('.dy-close').addEventListener('click', () => go('cover'));
+
+    root.querySelector('.tw-shut').addEventListener('click', close);
+
+    root.addEventListener('click', ev => {
+        const key = ev.target.closest('[data-k]');
+        if (key) { go(key.dataset.k); return; }
+        const slip = ev.target.closest('.tw-slip[data-id]');
+        if (slip) { spread(slip.dataset.id); return; }
+        if (ev.target === root.querySelector('.tw-open')) closePage();
+    });
+
     document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && root?.classList.contains('dy-on')) close();
+        if (e.key !== 'Escape' || !root?.classList.contains('tw-on')) return;
+        root.querySelector('.tw-open').hasAttribute('data-on') ? closePage() : close();
     });
 }
 
-function go(page) {
-    const book = root.querySelector('.dy-book');
-    if (page === 'cover') {
-        book.removeAttribute('data-open');
-        renderCover();
-        return;
-    }
-    book.setAttribute('data-open', '');
+function go(k) {
+    view = k;
+    root.querySelectorAll('.tw-key[data-k]').forEach(b =>
+        b.setAttribute('aria-pressed', String(b.dataset.k === k)));
+
     const ctx = getContext();
-    root.querySelector('.dy-top__t').textContent = ctx.name2 || '日记本';
-    const d = store.data();
-    root.querySelector('.dy-top__m').textContent =
-        `${d.startDate ? d.startDate.slice(0, 4) + ' 年 · ' : ''}第 ${(ctx.chat?.length || 1) - 1} 层`;
-    const pane = root.querySelector('.dy-pane');
-    pane.scrollTop = 0;
-    if (page === 'diary') renderDiary(pane);
-    else if (page === 'fav') renderFav(pane);
-    else renderSettings(pane);
+    root.querySelector('.tw-brand').textContent = (ctx.name2 || 'DIARY').split('').join(' ');
+    root.querySelector('.tw-key[data-k="wall"] b').textContent = store.data().entries.length;
+
+    const wall = root.querySelector('.tw-wall');
+    wall.scrollTop = 0;
+    ({ wall: viewWall, cal: viewCal, set: viewSet, new: viewNew }[k] || viewWall)(wall);
 }
 
-function refresh() {
-    if (!root?.classList.contains('dy-on')) return;
-    const book = root.querySelector('.dy-book');
-    if (!book.hasAttribute('data-open')) renderCover();
-    else {
-        const cur = root.querySelector('.dy-pane').dataset.page || 'diary';
-        go(cur);
-    }
+function feed(html) { root.querySelector('.tw-feed__t').innerHTML = html; }
+
+export function refresh() {
+    if (root?.classList.contains('tw-on')) go(view);
 }
 
-/* ══════════════ 封面 ══════════════ */
+/* ══════════════ 便签墙 ══════════════ */
 
-function renderCover() {
-    const ctx = getContext();
-    const d = store.data();
-    root.querySelector('.dy-cover').innerHTML = `
-      <div class="dy-cover__eyebrow">P R I V A T E</div>
-      <div class="dy-cover__mid">
-        <div class="dy-cover__title">日记</div>
-        <div class="dy-cover__rule"></div>
-        <div class="dy-cover__who">
-          <b>${esc(ctx.name2 || '未选择角色')}</b>
-          <span>${esc(ctx.chatName || ctx.getCurrentChatId?.() || '')}</span>
-        </div>
-      </div>
-      <div class="dy-cover__foot">
-        <div class="dy-cover__stat">
-          已写 <b>${d.entries.length}</b> 篇 · 收藏 <b>${d.favorites.length}</b> 条
-          ${d.startDate ? `<br>${esc(cnDate(d.startDate))} 起` : ''}
-        </div>
-        <button class="dy-gear" data-go="set" title="设置">⚙</button>
-      </div>`;
+function viewWall(wall) {
+    const list = store.sortedEntries();
+    const latest = [...list].sort((a, b) => String(a.date).localeCompare(String(b.date))).at(-1);
+    feed(list.length
+        ? `共 <b>${list.length}</b> 张 · 最近 ${esc(latest?.date || '')}`
+        : '还没有写过');
 
-    root.querySelector('.dy-marks').innerHTML = `
-      <button class="dy-mark" data-go="diary">日记 <b>${d.entries.length}</b></button>
-      <button class="dy-mark" data-go="fav">收藏 <b>${d.favorites.length}</b></button>`;
-
-    root.querySelectorAll('[data-go]').forEach(b =>
-        b.addEventListener('click', () => go(b.dataset.go)));
+    wall.className = 'tw-wall';
+    wall.innerHTML = list.length
+        ? list.map(slipHtml).join('')
+        : `<div class="tw-nothing">墙 上 还 是 空 的<br><br>
+             玩下去它会自己动笔<br>或者按「补写」自己开一张</div>`;
 }
 
-/* ══════════════ 日记 ══════════════ */
-
-function renderDiary(pane) {
-    pane.dataset.page = 'diary';
-    const entries = store.sortedEntries();
-    const pinned = entries.filter(e => e.pinned);
-    const rest = entries.filter(e => !e.pinned);
-
-    pane.innerHTML = `
-      <div class="dy-bar">
-        <div class="dy-seg">
-          <button data-view="list" aria-pressed="true">列表</button>
-          <button data-view="cal" aria-pressed="false">日历</button>
-        </div>
-        <button class="dy-btn dy-btn--on dy-push" data-act="sheet">＋ 补写</button>
-      </div>
-      <div class="dy-sheet"></div>
-      <div class="dy-list">
-        ${pinned.length ? `<div class="dy-divider">置顶</div>${pinned.map(entryHtml).join('')}` : ''}
-        ${rest.length ? `<div class="dy-divider">时间</div>${rest.map(entryHtml).join('')}` : ''}
-        ${entries.length ? '' : emptyHtml('还没有日记', '玩下去它会自己动笔，或者点上面的「补写」。')}
-      </div>
-      <div class="dy-cal" style="display:none"></div>`;
-
-    pane.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
-        pane.querySelectorAll('[data-view]').forEach(x => x.setAttribute('aria-pressed', 'false'));
-        b.setAttribute('aria-pressed', 'true');
-        const cal = b.dataset.view === 'cal';
-        pane.querySelector('.dy-list').style.display = cal ? 'none' : '';
-        pane.querySelector('.dy-sheet').style.display = cal ? 'none' : '';
-        const box = pane.querySelector('.dy-cal');
-        box.style.display = cal ? '' : 'none';
-        if (cal) renderCal(box);
-    }));
-
-    pane.querySelector('[data-act="sheet"]').addEventListener('click', () => {
-        const s = pane.querySelector('.dy-sheet');
-        s.hasAttribute('data-on') ? s.removeAttribute('data-on') : openSheet(s);
-    });
-
-    bindEntries(pane);
-}
-
-function entryHtml(e) {
-    const [y, m, dd] = String(e.date || '').split('-');
-    const alive = e.startUid ? store.indexOfUid(e.startUid) >= 0 : true;
-    const a = store.indexOfUid(e.startUid), b = store.indexOfUid(e.endUid);
+function slipHtml(e, i) {
+    const [, m, d] = String(e.date || '').split('-');
     return `
-      <div class="dy-entry${e.pinned ? ' dy-entry--pin' : ''}" data-id="${e.id}">
-        <div class="dy-entry__head">
-          <div class="dy-stamp">
-            <div class="dy-stamp__d">${esc(dd || '—')}</div>
-            <div class="dy-stamp__m">${monthAbbr(m)}</div>
-          </div>
-          <div class="dy-entry__main">
-            <div class="dy-entry__title">${e.pinned ? '<span class="dy-pin">置顶</span>' : ''}${esc(e.title || '(无标题)')}</div>
-            <div class="dy-entry__excerpt">${esc(String(e.text).replace(/\n+/g, ' ').slice(0, 90))}</div>
-          </div>
+      <div class="tw-slip${i % 3 === 1 ? ' tw-slip--tape' : ''}" data-id="${e.id}" tabindex="0">
+        <div class="tw-slip__date">
+          <span>${esc(String(e.date || '').replace(/-/g, '.'))}</span>
+          <span class="tw-slip__no">${MON[+m] || ''} ${d || ''}</span>
         </div>
-        <div class="dy-entry__full">
-          <div class="dy-entry__text" data-role="text">${esc(e.text)}</div>
-          <div class="dy-entry__foot">
-            <span class="dy-tag">${e.source === 'manual' ? '手动' : '自动'}</span>
-            ${e.spanFrom ? `<span class="dy-tag dy-tag--w">含 ${esc(e.spanFrom)} 起</span>` : ''}
-            ${alive && a >= 0 ? `<span class="dy-tag">第 ${a}–${b} 层</span>`
-                              : '<span class="dy-tag dy-tag--x">源楼层已删</span>'}
-            <button class="dy-btn dy-btn--xs dy-push" data-e="pin">${e.pinned ? '取消置顶' : '置顶'}</button>
-            <button class="dy-btn dy-btn--xs" data-e="edit">编辑</button>
-            ${alive ? '<button class="dy-btn dy-btn--xs" data-e="rewrite">重写</button>' : ''}
-            <button class="dy-btn dy-btn--xs" data-e="del">删除</button>
-          </div>
-        </div>
+        <div class="tw-slip__title">${esc(e.title || '(无标题)')}</div>
+        <div class="tw-slip__body">${esc(String(e.text).replace(/\n+/g, ' '))}</div>
+        ${e.pinned ? '<span class="tw-slip__pin">钉住</span>' : ''}
       </div>`;
 }
 
-const MONTHS = ['—', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const monthAbbr = m => MONTHS[Number(m)] || '—';
+/* ══════════════ 摊开一页 ══════════════ */
 
-function cnDate(iso) {
-    const [y, m, d] = String(iso || '').split('-');
-    return y && m && d ? `${y} 年 ${Number(m)} 月 ${Number(d)} 日` : String(iso || '');
-}
+function spread(id) {
+    const e = store.data().entries.find(x => x.id === id);
+    if (!e) return;
+    const a = store.indexOfUid(e.startUid), b = store.indexOfUid(e.endUid);
+    const alive = a >= 0 && b >= a;
+    const page = root.querySelector('.tw-page');
 
-function bindEntries(scope) {
-    scope.querySelectorAll('.dy-entry__head').forEach(h => h.addEventListener('click', () => {
-        const e = h.parentElement;
-        e.hasAttribute('data-open') ? e.removeAttribute('data-open') : e.setAttribute('data-open', '');
-    }));
+    page.innerHTML = `
+      <div class="tw-page__head">
+        <span>${esc(String(e.date || '').replace(/-/g, ' . '))}</span>
+        <span>${alive ? `第 ${a}–${b} 层` : '源楼层已删'} · ${e.source === 'manual' ? '手动' : '自动'}</span>
+      </div>
+      <div class="tw-page__title">${esc(e.title || '(无标题)')}</div>
+      <div class="tw-page__text" data-role="text">${esc(e.text)}</div>
+      <div class="tw-page__foot">
+        ${e.spanFrom ? `<span class="tw-pbtn" style="cursor:default">含 ${esc(e.spanFrom)} 起</span>` : ''}
+        <button class="tw-pbtn" data-e="pin" style="margin-left:auto">${e.pinned ? '取下' : '钉住'}</button>
+        <button class="tw-pbtn" data-e="edit">改写</button>
+        ${alive ? '<button class="tw-pbtn" data-e="rewrite">重写</button>' : ''}
+        <button class="tw-pbtn tw-pbtn--ribbon" data-e="del">撕掉</button>
+      </div>`;
 
-    scope.querySelectorAll('[data-e]').forEach(btn => btn.addEventListener('click', async ev => {
+    page.querySelectorAll('[data-e]').forEach(btn => btn.addEventListener('click', async ev => {
         ev.stopPropagation();
-        const wrap = btn.closest('.dy-entry');
-        const id = wrap.dataset.id;
         const act = btn.dataset.e;
 
         if (act === 'pin') {
-            const e = store.data().entries.find(x => x.id === id);
             store.updateEntry(id, { pinned: !e.pinned });
-            refresh();
+            await store.saveChatFile();
+            closePage(); refresh();
         }
         if (act === 'del') {
-            if (!confirm('删掉这篇日记？')) return;
+            if (!confirm('撕掉这张？撕了就没了。')) return;
             store.removeEntry(id);
-            refresh();
+            await store.saveChatFile();
+            closePage(); refresh();
         }
         if (act === 'edit') {
-            const box = wrap.querySelector('[data-role="text"]');
+            const box = page.querySelector('[data-role="text"]');
             if (box.tagName === 'TEXTAREA') return;
             const ta = document.createElement('textarea');
-            ta.className = 'dy-editor';
-            ta.value = store.data().entries.find(x => x.id === id)?.text || '';
+            ta.className = 'tw-editor';
             ta.dataset.role = 'text';
+            ta.value = e.text;
             box.replaceWith(ta);
-            btn.textContent = '保存';
+            btn.textContent = '存下';
             btn.dataset.e = 'save';
         }
         if (act === 'save') {
-            const ta = wrap.querySelector('textarea[data-role="text"]');
-            store.updateEntry(id, { text: ta.value });
+            store.updateEntry(id, { text: page.querySelector('textarea[data-role="text"]').value });
             await store.saveChatFile();
             toast('存好了');
-            refresh();
+            closePage(); refresh();
         }
         if (act === 'rewrite') {
-            btn.textContent = '写…'; btn.disabled = true;
-            try { await engine.rewrite(id); toast('重写好了'); refresh(); }
-            catch (e) { toast(e.message, true); btn.textContent = '重写'; btn.disabled = false; }
+            btn.textContent = '打字中'; btn.disabled = true;
+            try {
+                await engine.rewrite(id);
+                await store.saveChatFile();
+                toast('重写好了');
+                closePage(); refresh();
+            } catch (err) {
+                toast(err.message, true);
+                btn.textContent = '重写'; btn.disabled = false;
+            }
         }
     }));
+
+    root.querySelector('.tw-open').setAttribute('data-on', '');
 }
 
-/* ────────── 补写 ────────── */
-
-function openSheet(box) {
-    const len = (getContext().chat?.length || 1) - 1;
-    box.setAttribute('data-on', '');
-    box.innerHTML = `
-      <div class="dy-sheet__h">补 写 一 篇</div>
-      <div class="dy-field"><span>范围</span>
-        <input type="number" data-f="a" value="${Math.max(0, len - 9)}" style="width:66px"> 到
-        <input type="number" data-f="b" value="${len}" style="width:66px">
-      </div>
-      <div class="dy-field"><span>记在</span>
-        <input type="text" data-f="d" placeholder="留空自动检测" style="width:128px">
-        <span class="dy-faint">跨天记在最后一天</span>
-      </div>
-      <div class="dy-field" style="margin-top:12px">
-        <button class="dy-btn dy-btn--on" data-f="run">动笔</button>
-        <button class="dy-btn" data-f="cancel">取消</button>
-      </div>`;
-    box.querySelector('[data-f="cancel"]').addEventListener('click', () => box.removeAttribute('data-on'));
-    box.querySelector('[data-f="run"]').addEventListener('click', async ev => {
-        const btn = ev.currentTarget;
-        btn.textContent = '写…'; btn.disabled = true;
-        try {
-            await engine.writeRange(
-                Number(box.querySelector('[data-f="a"]').value),
-                Number(box.querySelector('[data-f="b"]').value),
-                box.querySelector('[data-f="d"]').value.trim(),
-            );
-            await store.saveChatFile();
-            toast('写好了');
-            refresh();
-        } catch (e) {
-            toast(e.message, true);
-            btn.textContent = '动笔'; btn.disabled = false;
-        }
-    });
+function closePage() {
+    root.querySelector('.tw-open').removeAttribute('data-on');
 }
 
 /* ══════════════ 日历 ══════════════ */
 
-function renderCal(box) {
+function viewCal(wall) {
     const d = store.data();
-    // 跟着最新一篇走
     if (!calCursor) {
         const latest = [...d.entries].sort((a, b) => String(a.date).localeCompare(String(b.date))).at(-1);
         const src = latest?.date || d.startDate || new Date().toISOString().slice(0, 10);
@@ -349,324 +236,266 @@ function renderCal(box) {
     const { y, m } = calCursor;
     const first = new Date(y, m - 1, 1).getDay();
     const days = new Date(y, m, 0).getDate();
+    const prefix = `${y}-${String(m).padStart(2, '0')}`;
+    feed(`${y} 年 ${m} 月 · <b>${d.entries.filter(e => String(e.date).startsWith(prefix)).length}</b> 天写过`);
 
     let cells = '';
-    for (let i = 0; i < first; i++) cells += '<div class="dy-day"></div>';
+    for (let i = 0; i < first; i++) cells += '<div class="tw-cell"></div>';
     for (let n = 1; n <= days; n++) {
-        const key = `${y}-${String(m).padStart(2, '0')}-${String(n).padStart(2, '0')}`;
+        const key = `${prefix}-${String(n).padStart(2, '0')}`;
         const has = d.entries.some(e => e.date === key);
-        const mark = d.marks[key];
-        cells += `<div class="dy-day dy-day--in${has ? ' dy-day--has' : ''}" data-d="${key}">
-            <div class="dy-day__n">${n}</div>
-            ${mark ? `<div class="dy-day__mark" title="${esc(mark)}">♦</div>` : ''}
-          </div>`;
+        cells += `<div class="tw-cell tw-cell--in${has ? ' tw-cell--has' : ''}${d.marks[key] ? ' tw-cell--mark' : ''}"
+                    data-d="${key}" title="${esc(d.marks[key] || '')}">${n}</div>`;
     }
 
-    box.innerHTML = `
-      <div class="dy-cal__nav">
-        <button class="dy-arrow" data-c="-1">‹</button>
-        <div class="dy-cal__label"><b>${y}</b> 年 <b>${m}</b> 月</div>
-        <button class="dy-arrow" data-c="1">›</button>
-      </div>
-      <div class="dy-cal__grid">
-        ${'日一二三四五六'.split('').map(x => `<div class="dy-cal__wd">${x}</div>`).join('')}
-        ${cells}
-      </div>
-      <div class="dy-cal__out"><div class="dy-blank"><p>点一个日子，看那天写了什么。</p></div></div>`;
+    wall.className = 'tw-wall tw-wall--solo';
+    wall.innerHTML = `
+      <div class="tw-calwrap">
+        <div class="tw-cal__nav">
+          <button class="tw-arrow" data-c="-1">&lt;</button>
+          <div class="tw-cal__label">${y} 年 ${m} 月</div>
+          <button class="tw-arrow" data-c="1">&gt;</button>
+        </div>
+        <div class="tw-grid">
+          ${'日一二三四五六'.split('').map(x => `<div class="tw-wd">${x}</div>`).join('')}
+          ${cells}
+        </div>
+        <div class="tw-cal__out"></div>
+      </div>`;
 
-    box.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', () => {
+    wall.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', () => {
         let mm = calCursor.m + Number(b.dataset.c);
         if (mm < 1) { mm = 12; calCursor.y--; }
         if (mm > 12) { mm = 1; calCursor.y++; }
         calCursor.m = mm;
-        renderCal(box);
+        viewCal(wall);
     }));
 
-    box.querySelector('.dy-cal__grid').addEventListener('click', ev => {
-        const cell = ev.target.closest('.dy-day--in');
+    wall.querySelector('.tw-grid').addEventListener('click', ev => {
+        const cell = ev.target.closest('.tw-cell--in');
         if (!cell) return;
-        box.querySelectorAll('.dy-day--sel').forEach(x => x.classList.remove('dy-day--sel'));
-        cell.classList.add('dy-day--sel');
-        showDay(box.querySelector('.dy-cal__out'), cell.dataset.d);
+        wall.querySelectorAll('.tw-cell--sel').forEach(x => x.classList.remove('tw-cell--sel'));
+        cell.classList.add('tw-cell--sel');
+        showDay(wall.querySelector('.tw-cal__out'), cell.dataset.d);
     });
 }
 
 function showDay(out, date) {
-    const list = store.entryOnDate(date);
+    const hit = store.entryOnDate(date);
     const mark = store.data().marks[date] || '';
-    if (list.length) {
-        out.innerHTML = list.map(entryHtml).join('') + markBar(mark);
-        out.querySelectorAll('.dy-entry').forEach(e => e.setAttribute('data-open', ''));
-        bindEntries(out);
-    } else {
-        out.innerHTML = `<div class="dy-blank">
-            <p>${esc(cnDate(date))} 还是空的。</p>
-            <button class="dy-btn dy-btn--on" data-day="write">为这天补写</button>
-          </div>` + markBar(mark);
-        out.querySelector('[data-day="write"]')?.addEventListener('click', () => {
-            const pane = root.querySelector('.dy-pane');
-            pane.querySelector('[data-view="list"]').click();
-            const s = pane.querySelector('.dy-sheet');
-            openSheet(s);
-            s.querySelector('[data-f="d"]').value = date;
-        });
-    }
-    bindMark(out, date);
-}
 
-function markBar(mark) {
-    return `<div class="dy-markbar">
-        <input type="text" data-mk="i" placeholder="给这天加个标记，比如 情人节" value="${esc(mark)}">
-        <button class="dy-btn dy-btn--xs" data-mk="save">存</button>
-      </div>`;
-}
+    out.innerHTML = (hit.length
+        ? `<div class="tw-daylist">${hit.map((e, i) => slipHtml(e, i)).join('')}</div>`
+        : `<div class="tw-nothing">${esc(cnDate(date))}<br>这天没有写<br><br>
+             <button class="tw-key" data-k="new">为这天补一张</button></div>`)
+        + `<div class="tw-markbar">
+             <input type="text" data-mk="i" placeholder="给这天记一笔，比如 她生日" value="${esc(mark)}">
+             <button class="tw-pbtn tw-pbtn--dim" data-mk="save">记下</button>
+           </div>`;
 
-function bindMark(out, date) {
     out.querySelector('[data-mk="save"]')?.addEventListener('click', () => {
         store.setMark(date, out.querySelector('[data-mk="i"]').value.trim());
-        toast('标记好了');
-        const box = root.querySelector('.dy-cal');
-        renderCal(box);
+        toast('记下了');
+        viewCal(root.querySelector('.tw-wall'));
     });
 }
 
-/* ══════════════ 收藏 ══════════════ */
+/* ══════════════ 补写 ══════════════ */
 
-function renderFav(pane) {
-    pane.dataset.page = 'fav';
-    const favs = [...store.data().favorites].sort((a, b) => b.createdAt - a.createdAt);
-    pane.innerHTML = favs.length
-        ? favs.map(favHtml).join('')
-        : emptyHtml('收藏夹是空的', '在聊天里点任意一层右上角的书签图标。');
+function viewNew(wall) {
+    feed('补写 · 选好范围按「动笔」');
+    const len = (getContext().chat?.length || 1) - 1;
 
-    pane.querySelectorAll('.dy-entry__head').forEach(h => h.addEventListener('click', () => {
-        const e = h.parentElement;
-        e.hasAttribute('data-open') ? e.removeAttribute('data-open') : e.setAttribute('data-open', '');
-    }));
-
-    pane.querySelectorAll('[data-f]').forEach(btn => btn.addEventListener('click', async ev => {
-        ev.stopPropagation();
-        const wrap = btn.closest('.dy-entry');
-        const id = wrap.dataset.id;
-        const fav = store.data().favorites.find(x => x.id === id);
-        const act = btn.dataset.f;
-
-        if (act === 'rename') {
-            const name = prompt('给这条起个名字', fav.name || '');
-            if (name === null) return;
-            store.updateFav(id, { name: name.trim() });
-            await store.saveChatFile();
-            refresh();
-        }
-        if (act === 'del') {
-            store.removeFav(id);
-            await store.saveChatFile();
-            decorateMessages();
-            refresh();
-        }
-        if (act === 'jump') {
-            const i = store.indexOfUid(fav.uid);
-            if (i < 0) return toast('这层已经不在了', true);
-            close();
-            document.querySelector(`#chat .mes[mesid="${i}"]`)
-                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        if (act === 'date') {
-            btn.textContent = '…';
-            try {
-                const date = await engine.dateOfMessage(fav.uid);
-                store.updateFav(id, { date });
-                await store.saveChatFile();
-                refresh();
-            } catch (e) { toast(e.message, true); }
-        }
-    }));
-}
-
-function favHtml(f) {
-    const i = store.indexOfUid(f.uid);
-    return `
-      <div class="dy-entry" data-id="${f.id}">
-        <div class="dy-entry__head">
-          <div class="dy-stamp">
-            <div class="dy-stamp__d">${i >= 0 ? i : '—'}</div>
-            <div class="dy-stamp__m">${f.date ? esc(f.date.slice(5)) : '层'}</div>
-          </div>
-          <div class="dy-entry__main">
-            <div class="dy-entry__title">${esc(f.name || f.snapshot.replace(/\n+/g, ' ').slice(0, 20) + '…')}</div>
-            <div class="dy-entry__excerpt">${esc(f.snapshot.replace(/\n+/g, ' ').slice(0, 90))}</div>
-          </div>
-        </div>
-        <div class="dy-entry__full">
-          <div class="dy-entry__text">${esc(f.snapshot)}</div>
-          <div class="dy-entry__foot">
-            ${f.date ? `<span class="dy-tag">${esc(f.date)}</span>`
-                     : '<button class="dy-btn dy-btn--xs" data-f="date">查日期</button>'}
-            ${i < 0 ? '<span class="dy-tag dy-tag--x">已不在当前分支</span>' : ''}
-            <button class="dy-btn dy-btn--xs dy-push" data-f="rename">改名</button>
-            ${i >= 0 ? '<button class="dy-btn dy-btn--xs" data-f="jump">跳到这层</button>' : ''}
-            <button class="dy-btn dy-btn--xs" data-f="del">移除</button>
-          </div>
+    wall.className = 'tw-wall tw-wall--solo';
+    wall.innerHTML = `
+      <div class="tw-spec" style="max-width:460px">
+        <div class="tw-spec__h">补 写 一 张</div>
+        <div class="tw-f"><span>范围</span>
+          <input type="number" data-n="a" value="${Math.max(0, len - 9)}" style="width:78px">
+          <span style="min-width:0">到</span>
+          <input type="number" data-n="b" value="${len}" style="width:78px"></div>
+        <div class="tw-f"><span>记在</span>
+          <input type="text" data-n="d" placeholder="留空自动检测" style="width:152px"></div>
+        <p class="tw-tiny">跨天的记在最后一天。</p>
+        <div style="margin-top:20px;display:flex;gap:9px;flex-wrap:wrap">
+          <button class="tw-key tw-key--ribbon" data-n="run" style="padding:11px 24px">动笔</button>
+          <button class="tw-key" data-k="wall" style="padding:11px 24px">取消</button>
         </div>
       </div>`;
-}
 
-function emptyHtml(title, sub) {
-    return `<div class="dy-empty"><h4>${esc(title)}</h4><p>${esc(sub)}</p></div>`;
+    wall.querySelector('[data-n="run"]').addEventListener('click', async ev => {
+        const b = ev.currentTarget;
+        b.textContent = '打字中'; b.disabled = true;
+        try {
+            await engine.writeRange(
+                Number(wall.querySelector('[data-n="a"]').value),
+                Number(wall.querySelector('[data-n="b"]').value),
+                wall.querySelector('[data-n="d"]').value.trim(),
+            );
+            await store.saveChatFile();
+            toast('写好了');
+            go('wall');
+        } catch (e) {
+            toast(e.message, true);
+            b.textContent = '动笔'; b.disabled = false;
+        }
+    });
 }
 
 /* ══════════════ 设置 ══════════════ */
 
-async function renderSettings(pane) {
-    pane.dataset.page = 'set';
+async function viewSet(wall) {
+    feed('设置 · 改动即时生效');
     const s = store.settings();
     const d = store.data();
+    const rules = store.charRules();
     const books = await ctxLib.listBooks();
     const profiles = api.tavernProfiles();
 
-    pane.innerHTML = `
-      <div class="dy-sec">
-        <div class="dy-sec__h">动 笔</div>
-        <div class="dy-row"><div class="dy-row__t"><label>自动</label></div>
-          <div class="dy-row__c"><input type="checkbox" class="dy-sw" data-s="auto" ${s.auto ? 'checked' : ''}></div></div>
-        <div class="dy-auto" ${s.auto ? '' : 'data-off'}>
-          <div class="dy-row"><div class="dy-row__t"><label>触发</label>
-            <div class="dy-sub">
-              <div class="dy-line"><input type="checkbox" class="dy-sw" data-s="trigger.newDay" ${s.trigger.newDay ? 'checked' : ''}><span>新一天</span></div>
-              <div class="dy-line"><input type="checkbox" class="dy-sw" data-s="trigger.everyN" ${s.trigger.everyN ? 'checked' : ''}><span>每</span>
-                <input type="number" data-s="trigger.n" value="${s.trigger.n}"><span>层楼</span></div>
-            </div></div></div>
-          <div class="dy-row"><div class="dy-row__t"><label>等下一条消息再动笔</label></div>
-            <div class="dy-row__c"><input type="checkbox" class="dy-sw" data-s="waitNext" ${s.waitNext ? 'checked' : ''}></div></div>
-          <div class="dy-row"><div class="dy-row__t"><label>第一篇包含开场白</label></div>
-            <div class="dy-row__c"><input type="checkbox" class="dy-sw" data-s="includeGreeting" ${s.includeGreeting ? 'checked' : ''}></div></div>
+    wall.className = 'tw-wall tw-wall--solo';
+    wall.innerHTML = `
+      <div class="tw-spec">
+        <div class="tw-spec__h">A ─ 动 笔</div>
+        <div class="tw-r"><div class="tw-r__t"><label>自动</label></div>
+          <div class="tw-r__c"><input type="checkbox" class="tw-tog" data-s="auto" ${s.auto ? 'checked' : ''}></div></div>
+        <div class="tw-auto" ${s.auto ? '' : 'data-off'}>
+          <div class="tw-r"><div class="tw-r__t"><label>触发</label><div class="tw-sub">
+            <div class="tw-ln"><input type="checkbox" class="tw-tog" data-s="trigger.newDay" ${s.trigger.newDay ? 'checked' : ''}><span>新一天</span></div>
+            <div class="tw-ln"><input type="checkbox" class="tw-tog" data-s="trigger.everyN" ${s.trigger.everyN ? 'checked' : ''}><span>每</span>
+              <input type="number" data-s="trigger.n" value="${s.trigger.n}"><span>层楼</span></div>
+          </div></div></div>
+          <div class="tw-r"><div class="tw-r__t"><label>等下一条消息再动笔</label></div>
+            <div class="tw-r__c"><input type="checkbox" class="tw-tog" data-s="waitNext" ${s.waitNext ? 'checked' : ''}></div></div>
+          <div class="tw-r"><div class="tw-r__t"><label>第一篇包含开场白</label></div>
+            <div class="tw-r__c"><input type="checkbox" class="tw-tog" data-s="includeGreeting" ${s.includeGreeting ? 'checked' : ''}></div></div>
         </div>
-      </div>
 
-      ${apiCard('看时间', 'apiTime', s.apiTime, profiles)}
-      ${apiCard('写日记', 'apiWrite', s.apiWrite, profiles)}
+        ${apiBlock('B ─ 看 时 间 的 模 型', 'apiTime', s.apiTime, profiles)}
+        ${apiBlock('C ─ 写 日 记 的 模 型', 'apiWrite', s.apiWrite, profiles)}
 
-      <div class="dy-sec">
-        <div class="dy-sec__h">给 它 看 什 么</div>
-        <div class="dy-wl">
-          <div class="dy-wl__h"><span class="dy-wl__n">世界观设定<em>可多选</em></span>
-            <input type="checkbox" class="dy-sw" data-s="world.enabled" ${s.world.enabled ? 'checked' : ''}></div>
-          <div class="dy-wl__b">
-            ${books.length ? books.map(b => `
-              <label class="dy-wb"><input type="checkbox" data-book="${esc(b.name)}"
-                ${s.world.books.includes(b.name) ? 'checked' : ''}>${esc(b.name)}
-                ${b.bound ? '<span>角色绑定</span>' : ''}</label>`).join('')
-              : '<p class="dy-faint">没有找到世界书</p>'}
-          </div>
-          <div class="dy-wl__f"><label class="dy-line"><input type="checkbox" data-s="world.constantOnly"
-            ${s.world.constantOnly ? 'checked' : ''}>只取常驻条目</label></div>
+        <div class="tw-spec__h">D ─ 给 它 看 什 么</div>
+        <div class="tw-book">
+          <div class="tw-book__h"><span class="tw-book__n">世界观设定</span>
+            <input type="checkbox" class="tw-tog" data-s="world.enabled" ${s.world.enabled ? 'checked' : ''}></div>
+          ${books.length ? books.map(b => `
+            <label class="tw-wb"><input type="checkbox" data-book="${esc(b.name)}"
+              ${s.world.books.includes(b.name) ? 'checked' : ''}>${esc(b.name)}
+              ${b.bound ? '<span>角色绑定</span>' : ''}</label>`).join('')
+            : '<p class="tw-tiny">没有找到世界书</p>'}
+          <label class="tw-wb tw-wb--sep"><input type="checkbox" data-s="world.constantOnly"
+            ${s.world.constantOnly ? 'checked' : ''}>只取常驻条目</label>
         </div>
-        <div class="dy-wl">
-          <div class="dy-wl__h"><span class="dy-wl__n">前情<em>记忆插件</em></span>
-            <input type="checkbox" class="dy-sw" data-s="memory.enabled" ${s.memory.enabled ? 'checked' : ''}></div>
-          <div class="dy-wl__f">
+        <div class="tw-book">
+          <div class="tw-book__h"><span class="tw-book__n">前情 · 记忆插件</span>
+            <input type="checkbox" class="tw-tog" data-s="memory.enabled" ${s.memory.enabled ? 'checked' : ''}></div>
+          <div class="tw-f" style="margin:0">
             <select data-s="memory.book"><option value="">（选一本）</option>
               ${books.map(b => `<option ${s.memory.book === b.name ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
             </select>
-            <span>只取最近</span><input type="number" data-s="memory.recent" value="${s.memory.recent}"><span>条</span>
-          </div>
+            <span style="min-width:0">最近</span><input type="number" data-s="memory.recent" value="${s.memory.recent}">
+            <span style="min-width:0">条</span></div>
         </div>
-      </div>
 
-      <div class="dy-sec">
-        <div class="dy-sec__h">只 看 正 文</div>
-        <div class="dy-row"><div class="dy-row__t"><label>剥掉思考和杂标签</label>
-          <p>去掉 thinking / reasoning / slate / draft / 状态栏。</p></div>
-          <div class="dy-row__c"><input type="checkbox" class="dy-sw" data-s="clean" ${s.clean ? 'checked' : ''}></div></div>
-        <div class="dy-row"><div class="dy-row__t"><label>正文在哪</label>
-          <p style="margin-bottom:8px">填了就只取匹配的部分；留空用上面的默认清洗。</p>
-          <input type="text" class="dy-wide dy-mono" data-s="contentRegex" value="${esc(s.contentRegex)}"
-            placeholder="&lt;content&gt;([\\s\\S]*?)&lt;/content&gt;">
-          <div class="dy-probe"><button class="dy-btn dy-btn--xs" data-act="probeContent">让它读一条，猜猜看</button>
-            <span class="dy-probe__out" data-out="content"></span></div>
-          <pre class="dy-peek" data-peek="content"></pre></div></div>
-        <div class="dy-row"><div class="dy-row__t"><label>时间在哪</label>
-          <p style="margin-bottom:8px">填了就只从这一小段读日期，不必把整段正文喂给模型，省很多。</p>
-          <input type="text" class="dy-wide dy-mono" data-s="timeRegex" value="${esc(s.timeRegex)}"
-            placeholder="&lt;Ti&gt;([^&lt;]*)&lt;/Ti&gt;">
-          <div class="dy-probe"><button class="dy-btn dy-btn--xs" data-act="probe">让它读一条，猜猜看</button>
-            <span class="dy-probe__out"></span></div></div></div>
-        <div class="dy-row"><div class="dy-row__t"><label>故事从哪天开始</label></div>
-          <div class="dy-row__c"><input type="text" data-s="__start" value="${esc(d.startDate)}"
-            placeholder="YYYY-MM-DD" style="width:110px">
-            <button class="dy-btn dy-btn--xs" data-act="redetect">重新读</button></div></div>
-      </div>
+        <div class="tw-spec__h">E ─ 只 看 正 文</div>
+        <p class="tw-tiny" style="margin:0 0 12px">下面两条正则只对当前这张卡生效，换角色互不影响。</p>
+        <div class="tw-r"><div class="tw-r__t"><label>剥掉思考和杂标签</label>
+          <p>thinking / reasoning / slate / draft / 状态栏</p></div>
+          <div class="tw-r__c"><input type="checkbox" class="tw-tog" data-s="clean" ${s.clean ? 'checked' : ''}></div></div>
+        <div class="tw-r"><div class="tw-r__t"><label>正文在哪</label>
+          <p>填了就只取匹配的部分；留空用上面的默认清洗。</p>
+          <input type="text" data-rule="contentRegex" value="${esc(rules.contentRegex)}"
+            placeholder="&lt;content&gt;([\\s\\S]*?)&lt;/content&gt;" style="width:100%;margin-top:8px">
+          <div class="tw-probe"><button class="tw-pbtn tw-pbtn--dim" data-act="probeContent">让它读一条，猜猜看</button>
+            <span data-out="content"></span></div>
+          <pre class="tw-peek" data-peek="content"></pre></div></div>
+        <div class="tw-r"><div class="tw-r__t"><label>时间在哪</label>
+          <p>填了就只从这一小段读日期，不必把整段正文喂给模型，省很多。</p>
+          <input type="text" data-rule="timeRegex" value="${esc(rules.timeRegex)}"
+            placeholder="&lt;Ti&gt;([^&lt;]*)&lt;/Ti&gt;" style="width:100%;margin-top:8px">
+          <div class="tw-probe"><button class="tw-pbtn tw-pbtn--dim" data-act="probeTime">让它读一条，猜猜看</button>
+            <span data-out="time"></span></div></div></div>
+        <div class="tw-r"><div class="tw-r__t"><label>故事从哪天开始</label></div>
+          <div class="tw-r__c"><input type="text" data-s="__start" value="${esc(d.startDate)}"
+            placeholder="YYYY-MM-DD" style="width:118px">
+            <button class="tw-pbtn tw-pbtn--dim" data-act="redetect">重新读</button></div></div>
 
-      <div class="dy-sec">
-        <div class="dy-sec__h">怎 么 写</div>
+        <div class="tw-spec__h">F ─ 怎 么 写</div>
         <textarea data-s="writePrompt">${esc(s.writePrompt)}</textarea>
-        <p class="dy-hint">可用 <code>{{char}}</code> <code>{{user}}</code> <code>{{date}}</code>
+        <p class="tw-tiny">可用 <code>{{char}}</code> <code>{{user}}</code> <code>{{date}}</code>
           <code>{{content}}</code> <code>{{world}}</code> <code>{{memory}}</code>
-          <button class="dy-btn dy-btn--xs" data-reset="writePrompt">恢复默认</button></p>
-        <details class="dy-fold"><summary>看时间用的提示词</summary>
-          <textarea data-s="timePrompt">${esc(s.timePrompt)}</textarea>
-          <p class="dy-hint">可用 <code>{{start}}</code> <code>{{content}}</code>。必须让它只回 JSON。
-            <button class="dy-btn dy-btn--xs" data-reset="timePrompt">恢复默认</button></p>
-        </details>
-      </div>
+          <button class="tw-pbtn tw-pbtn--dim" data-reset="writePrompt">恢复默认</button></p>
+        <details class="tw-log" style="margin-top:10px"><summary>看时间用的提示词</summary>
+          <div class="tw-fold">
+            <textarea data-s="timePrompt">${esc(s.timePrompt)}</textarea>
+            <p class="tw-tiny">可用 <code>{{start}}</code> <code>{{content}}</code>。必须让它只回 JSON。
+              <button class="tw-pbtn tw-pbtn--dim" data-reset="timePrompt">恢复默认</button></p>
+          </div></details>
 
-      <div class="dy-sec">
-        <div class="dy-sec__h">运 行 日 志</div>
-        <p class="dy-hint" style="margin:0 0 10px">日记写得不对时看这里：它读了哪几楼、日期怎么判的、实际喂进去什么。只留最近 12 条。</p>
-        <div class="dy-logs">${logsHtml()}</div>
-        <div class="dy-probe">
-          <button class="dy-btn dy-btn--xs" data-act="copyLogs">复制全部</button>
-          <button class="dy-btn dy-btn--xs" data-act="clearLogs">清空</button>
-        </div>
-      </div>
+        <div class="tw-spec__h">G ─ 运 行 日 志</div>
+        <p class="tw-tiny" style="margin:0 0 10px">日记写得不对时看这里：它读了哪几楼、日期怎么判的、实际喂进去什么。</p>
+        ${logsHtml()}
+        <div class="tw-probe"><button class="tw-pbtn tw-pbtn--dim" data-act="copyLogs">复制全部</button>
+          <button class="tw-pbtn tw-pbtn--dim" data-act="clearLogs">清空</button></div>
 
-      <div class="dy-sec">
-        <div class="dy-sec__h">日 记 本 身</div>
-        <div class="dy-row"><div class="dy-row__t"><label>导出</label>
-          <p>这个对话的全部日记、收藏、标记。</p></div>
-          <div class="dy-row__c">
-            <select data-s="__fmt" style="max-width:96px"><option value="json">JSON</option><option value="md">Markdown</option></select>
-            <button class="dy-btn dy-btn--on" data-act="export">导出</button></div></div>
-        <div class="dy-row"><div class="dy-row__t"><label>导入</label>
-          <p>同一天已有日记时会问你保留哪一篇。</p></div>
-          <div class="dy-row__c"><button class="dy-btn" data-act="import">选择文件</button></div></div>
+        <div class="tw-spec__h">H ─ 日 记 本 身</div>
+        <div class="tw-f"><span>导出</span>
+          <select data-s="__fmt" style="max-width:112px"><option value="json">JSON</option><option value="md">Markdown</option></select>
+          <button class="tw-pbtn tw-pbtn--dim" data-act="export">导出</button>
+          <button class="tw-pbtn tw-pbtn--dim" data-act="import">导入</button></div>
       </div>`;
 
-    bindSettings(pane);
+    bindSettings(wall);
 }
 
-function apiCard(title, key, cfg, profiles) {
+function apiBlock(title, key, cfg, profiles) {
     const tav = cfg.mode === 'tavern';
     return `
-      <div class="dy-sec">
-        <div class="dy-sec__h">${title} 的 模 型</div>
-        <div class="dy-api" data-api="${key}">
-          <div class="dy-f"><span>连接方式</span>
-            <div class="dy-seg">
-              <button data-mode="standalone" aria-pressed="${!tav}">独立 API</button>
-              <button data-mode="tavern" aria-pressed="${tav}">酒馆当前</button>
-            </div>
-          </div>
-          <div class="dy-standalone" ${tav ? 'style="display:none"' : ''}>
-            <div class="dy-f"><span>地址</span><input type="text" class="dy-mono" data-c="url" value="${esc(cfg.url)}" placeholder="https://api.example.com/v1"></div>
-            <div class="dy-f"><span>密钥</span><input type="password" class="dy-mono" data-c="key" value="${esc(cfg.key)}"></div>
-            <div class="dy-f"><span>模型</span>
-              <select data-c="model">${cfg.model ? `<option selected>${esc(cfg.model)}</option>` : '<option value="">（先拉取）</option>'}</select>
-              <button class="dy-btn dy-btn--xs" data-act="pull">拉取</button></div>
-          </div>
-          <div class="dy-tavern" ${tav ? '' : 'style="display:none"'}>
-            <div class="dy-f"><span>连接配置</span>
-              <select data-c="profile"><option value="">（用当前正连着的）</option>
-                ${profiles.map(p => `<option value="${esc(p.id)}" ${cfg.profile === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
-              </select></div>
-          </div>
-          <div class="dy-f" style="margin-bottom:0"><span>参数</span>
-            <span class="dy-faint">温度</span><input type="number" step="0.1" data-c="temp" value="${cfg.temp}" style="width:56px">
-            <span class="dy-faint">上限</span><input type="number" data-c="max" value="${cfg.max}" style="width:64px">
-            <button class="dy-btn dy-btn--xs dy-push" data-act="test">测试连接</button></div>
+      <div class="tw-spec__h">${title}</div>
+      <div data-api="${key}">
+        <div class="tw-f"><span>连接</span>
+          <select data-c="mode">
+            <option value="standalone" ${tav ? '' : 'selected'}>独立 API</option>
+            <option value="tavern" ${tav ? 'selected' : ''}>酒馆当前</option>
+          </select></div>
+        <div class="tw-standalone" ${tav ? 'style="display:none"' : ''}>
+          <div class="tw-f"><span>地址</span><input type="text" data-c="url" value="${esc(cfg.url)}" placeholder="https://api.example.com/v1"></div>
+          <div class="tw-f"><span>密钥</span><input type="password" data-c="key" value="${esc(cfg.key)}"></div>
+          <div class="tw-f"><span>模型</span>
+            <select data-c="model">${cfg.model ? `<option selected>${esc(cfg.model)}</option>` : '<option value="">（先拉取）</option>'}</select>
+            <button class="tw-pbtn tw-pbtn--dim" data-act="pull">拉取</button></div>
         </div>
+        <div class="tw-tavern" ${tav ? '' : 'style="display:none"'}>
+          <div class="tw-f"><span>配置</span>
+            <select data-c="profile"><option value="">（用当前正连着的）</option>
+              ${profiles.map(p => `<option value="${esc(p.id)}" ${cfg.profile === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+            </select></div>
+        </div>
+        <div class="tw-f"><span>参数</span>
+          <span style="min-width:0">温度</span><input type="number" step="0.1" data-c="temp" value="${cfg.temp}" style="width:60px">
+          <span style="min-width:0">上限</span><input type="number" data-c="max" value="${cfg.max}" style="width:74px">
+          <button class="tw-pbtn tw-pbtn--dim" data-act="test">测试连接</button></div>
       </div>`;
 }
+
+/* ────────── 日志 ────────── */
+
+function logsHtml() {
+    const logs = store.data().logs || [];
+    if (!logs.length) return '<p class="tw-tiny">还没有记录。写过一张之后这里才有东西。</p>';
+
+    return logs.map(L => {
+        const t = new Date(L.at);
+        const p2 = n => String(n).padStart(2, '0');
+        const when = `${p2(t.getMonth() + 1)}.${p2(t.getDate())} ${p2(t.getHours())}:${p2(t.getMinutes())}`;
+        const head = L.kind === '日期已修正' ? `${L.count} 处` : `${L.date} · 楼层 ${L.楼层}`;
+        return `<details class="tw-log">
+            <summary>[${esc(L.kind)}] ${esc(when)} · ${esc(head)}</summary>
+            <pre>${esc(JSON.stringify(L, null, 2))}</pre>
+          </details>`;
+    }).join('');
+}
+
+/* ────────── 设置绑定 ────────── */
 
 function setDeep(obj, path, val) {
     const parts = path.split('.');
@@ -675,10 +504,9 @@ function setDeep(obj, path, val) {
     cur[parts.at(-1)] = val;
 }
 
-/** 拿最新一条角色回复实测正文规则，把结果摊开。纯本地，不花钱，可以随便跑。 */
-function runContentPreview(pane) {
-    const out = pane.querySelector('[data-out="content"]');
-    const peek = pane.querySelector('[data-peek="content"]');
+function runPreview(wall) {
+    const out = wall.querySelector('[data-out="content"]');
+    const peek = wall.querySelector('[data-peek="content"]');
     if (!out || !peek) return;
 
     const chat = getContext().chat || [];
@@ -689,8 +517,8 @@ function runContentPreview(pane) {
     const n = msg.mes.length;
     out.textContent = {
         regex: `正则命中 ${r.hits} 处，${n} → ${r.afterRegex} 字，清洗后 ${r.text.length} 字`,
-        miss: `⚠ 正则一处都没匹配到，已退回默认清洗（${n} → ${r.text.length} 字）`,
-        bad: `⚠ 正则写错了：${r.error}`,
+        miss: `正则一处都没匹配到，已退回默认清洗（${n} → ${r.text.length} 字）`,
+        bad: `正则写错了：${r.error}`,
         clean: `没填正则，用默认清洗，${n} → ${r.text.length} 字`,
     }[r.mode];
 
@@ -702,204 +530,139 @@ function runContentPreview(pane) {
     peek.setAttribute('data-on', '');
 }
 
-/* ────────── 运行日志 ────────── */
-
-function logsHtml() {
-    const logs = store.data().logs || [];
-    if (!logs.length) return '<p class="dy-hint" style="margin:0">还没有记录。写过一篇日记之后这里才有东西。</p>';
-
-    return logs.map(L => {
-        const t = new Date(L.at);
-        const when = `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-        const head = L.kind === '日期已修正'
-            ? `修正了 ${L.count} 处日期`
-            : `${L.date}　楼层 ${L.楼层}　提示词 ${L.提示词字数} 字`;
-        return `
-          <details class="dy-log">
-            <summary><span class="dy-log__k">${esc(L.kind)}</span>${esc(when)}　${esc(head)}</summary>
-            <pre>${esc(JSON.stringify(L, null, 2))}</pre>
-          </details>`;
-    }).join('');
-}
-
-function bindLogs(pane) {
-    pane.querySelector('[data-act="copyLogs"]')?.addEventListener('click', async () => {
-        const text = JSON.stringify(store.data().logs || [], null, 2);
-        try {
-            await navigator.clipboard.writeText(text);
-            toast('已复制，可以贴给别人看');
-        } catch {
-            // 移动端剪贴板可能被拦，退回手动选
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.cssText = 'position:fixed;top:10%;left:5%;width:90%;height:60%;z-index:99999';
-            document.body.appendChild(ta);
-            ta.select();
-            toast('复制不了，已摊开，手动全选复制后点空白处关闭', true);
-            ta.addEventListener('blur', () => ta.remove());
-        }
-    });
-    pane.querySelector('[data-act="clearLogs"]')?.addEventListener('click', () => {
-        if (!confirm('清空日志？')) return;
-        store.clearLogs();
-        refresh();
-    });
-}
-
-function bindSettings(pane) {
+function bindSettings(wall) {
     const s = store.settings();
-    bindLogs(pane);
 
-    // 普通字段
-    pane.querySelectorAll('[data-s]').forEach(el => {
+    wall.querySelectorAll('[data-s]').forEach(el => {
         const path = el.dataset.s;
         if (path.startsWith('__')) return;
-        const ev = el.type === 'checkbox' ? 'change' : 'input';
-        el.addEventListener(ev, () => {
+        el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
             const v = el.type === 'checkbox' ? el.checked
                 : el.type === 'number' ? Number(el.value) : el.value;
             setDeep(s, path, v);
             store.saveSettings();
-            if (path === 'auto') {
-                pane.querySelector('.dy-auto')?.toggleAttribute('data-off', !el.checked);
-            }
+            if (path === 'auto') wall.querySelector('.tw-auto')?.toggleAttribute('data-off', !el.checked);
         });
     });
 
-    // 起始日
-    pane.querySelector('[data-s="__start"]')?.addEventListener('input', e => {
+    wall.querySelectorAll('[data-rule]').forEach(el =>
+        el.addEventListener('input', () => store.saveCharRules({ [el.dataset.rule]: el.value })));
+
+    wall.querySelector('[data-s="__start"]')?.addEventListener('input', e => {
         store.data().startDate = e.target.value.trim();
         store.save();
     });
 
-    // 世界书多选
-    pane.querySelectorAll('[data-book]').forEach(cb => cb.addEventListener('change', () => {
-        const name = cb.dataset.book;
+    wall.querySelectorAll('[data-book]').forEach(cb => cb.addEventListener('change', () => {
         const list = s.world.books;
-        const i = list.indexOf(name);
-        if (cb.checked && i < 0) list.push(name);
+        const i = list.indexOf(cb.dataset.book);
+        if (cb.checked && i < 0) list.push(cb.dataset.book);
         if (!cb.checked && i >= 0) list.splice(i, 1);
         store.saveSettings();
     }));
 
-    // API 卡片
-    pane.querySelectorAll('.dy-api').forEach(card => {
-        const key = card.dataset.api;
-        const cfg = s[key];
-
-        card.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
-            cfg.mode = b.dataset.mode;
-            store.saveSettings();
-            card.querySelectorAll('[data-mode]').forEach(x =>
-                x.setAttribute('aria-pressed', String(x.dataset.mode === cfg.mode)));
-            card.querySelector('.dy-standalone').style.display = cfg.mode === 'tavern' ? 'none' : '';
-            card.querySelector('.dy-tavern').style.display = cfg.mode === 'tavern' ? '' : 'none';
-        }));
-
+    wall.querySelectorAll('[data-api]').forEach(card => {
+        const cfg = s[card.dataset.api];
         card.querySelectorAll('[data-c]').forEach(el => {
-            const f = el.dataset.c;
             el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
-                cfg[f] = el.type === 'number' ? Number(el.value) : el.value;
+                cfg[el.dataset.c] = el.type === 'number' ? Number(el.value) : el.value;
                 store.saveSettings();
+                if (el.dataset.c === 'mode') {
+                    card.querySelector('.tw-standalone').style.display = cfg.mode === 'tavern' ? 'none' : '';
+                    card.querySelector('.tw-tavern').style.display = cfg.mode === 'tavern' ? '' : 'none';
+                }
             });
         });
-
         card.querySelector('[data-act="pull"]')?.addEventListener('click', async ev => {
             const b = ev.currentTarget;
             b.textContent = '…'; b.disabled = true;
             try {
                 const models = await api.fetchModels(cfg.url, cfg.key);
-                const sel = card.querySelector('[data-c="model"]');
-                sel.innerHTML = models.map(m =>
-                    `<option ${m === cfg.model ? 'selected' : ''}>${esc(m)}</option>`).join('');
+                card.querySelector('[data-c="model"]').innerHTML =
+                    models.map(m => `<option ${m === cfg.model ? 'selected' : ''}>${esc(m)}</option>`).join('');
                 if (!cfg.model && models[0]) { cfg.model = models[0]; store.saveSettings(); }
                 toast(`拉到 ${models.length} 个模型`);
             } catch (e) { toast(e.message, true); }
             b.textContent = '拉取'; b.disabled = false;
         });
-
         card.querySelector('[data-act="test"]')?.addEventListener('click', async ev => {
             const b = ev.currentTarget;
-            b.textContent = '测…'; b.disabled = true;
+            b.textContent = '…'; b.disabled = true;
             try { toast(await api.testConnection(cfg)); }
             catch (e) { toast(e.message, true); }
             b.textContent = '测试连接'; b.disabled = false;
         });
     });
 
-    // 猜正文正则：填进框里，顺手跑一次预览让用户当场看结果
-    pane.querySelector('[data-act="probeContent"]')?.addEventListener('click', async ev => {
-        const b = ev.currentTarget;
-        const out = pane.querySelector('[data-out="content"]');
+    wall.querySelector('[data-act="probeContent"]')?.addEventListener('click', async ev => {
+        const b = ev.currentTarget, out = wall.querySelector('[data-out="content"]');
         b.textContent = '读…'; b.disabled = true; out.textContent = '';
         try {
             const r = await engine.probeContentRegex();
-            pane.querySelector('[data-s="contentRegex"]').value = r.regex;
-            s.contentRegex = r.regex;
-            store.saveSettings();
-            runContentPreview(pane);
+            wall.querySelector('[data-rule="contentRegex"]').value = r.regex;
+            store.saveCharRules({ contentRegex: r.regex });
+            runPreview(wall);
             if (r.note) out.textContent = `${r.note}　|　${out.textContent}`;
-        } catch (e) {
-            out.textContent = e.message;
-        }
+        } catch (e) { out.textContent = e.message; }
         b.textContent = '让它读一条，猜猜看'; b.disabled = false;
     });
 
-    // 恢复默认提示词
-    pane.querySelectorAll('[data-reset]').forEach(btn => btn.addEventListener('click', () => {
-        const key = btn.dataset.reset;
-        const def = key === 'timePrompt' ? store.DEFAULT_TIME_PROMPT : store.DEFAULT_WRITE_PROMPT;
-        if (!confirm('用默认的覆盖掉现在这份？')) return;
-        s[key] = def;
-        store.saveSettings();
-        const ta = pane.querySelector(`textarea[data-s="${key}"]`);
-        if (ta) ta.value = def;
-        toast('已恢复默认');
-    }));
-
-    // 猜时间正则：只给建议，填不填由用户定
-    pane.querySelector('[data-act="probe"]')?.addEventListener('click', async ev => {
-        const b = ev.currentTarget;
-        const out = pane.querySelector('.dy-probe__out');
+    wall.querySelector('[data-act="probeTime"]')?.addEventListener('click', async ev => {
+        const b = ev.currentTarget, out = wall.querySelector('[data-out="time"]');
         b.textContent = '读…'; b.disabled = true; out.textContent = '';
         try {
             const r = await engine.probeTimeRegex();
-            const input = pane.querySelector('[data-s="timeRegex"]');
-            input.value = r.regex;
-            s.timeRegex = r.regex;
-            store.saveSettings();
-            out.textContent = r.sample ? `抓到：${r.sample.slice(0, 40)}` : '已填入，确认一下';
-        } catch (e) {
-            out.textContent = e.message;
-        }
+            wall.querySelector('[data-rule="timeRegex"]').value = r.regex;
+            store.saveCharRules({ timeRegex: r.regex });
+            out.textContent = r.sample ? `抓到：${r.sample.slice(0, 44)}` : '已填入，确认一下';
+        } catch (e) { out.textContent = e.message; }
         b.textContent = '让它读一条，猜猜看'; b.disabled = false;
     });
 
-    // 重新读起始日
-    pane.querySelector('[data-act="redetect"]')?.addEventListener('click', async ev => {
+    wall.querySelector('[data-act="redetect"]')?.addEventListener('click', async ev => {
         const b = ev.currentTarget;
         b.textContent = '读…'; b.disabled = true;
         try {
             const date = await engine.detectStartDate(true);
-            pane.querySelector('[data-s="__start"]').value = date || '';
+            wall.querySelector('[data-s="__start"]').value = date || '';
             toast(date ? `读到 ${date}` : '没读出来，手填一个吧', !date);
         } catch (e) { toast(e.message, true); }
         b.textContent = '重新读'; b.disabled = false;
     });
 
-    // 导出
-    pane.querySelector('[data-act="export"]')?.addEventListener('click', () => {
-        const fmt = pane.querySelector('[data-s="__fmt"]').value;
-        const d = store.data();
+    wall.querySelectorAll('[data-reset]').forEach(btn => btn.addEventListener('click', () => {
+        const key = btn.dataset.reset;
+        const def = key === 'timePrompt' ? store.DEFAULT_TIME_PROMPT : store.DEFAULT_WRITE_PROMPT;
+        if (!confirm('用默认的覆盖掉现在这份？')) return;
+        s[key] = def;
+        store.saveSettings();
+        const ta = wall.querySelector(`textarea[data-s="${key}"]`);
+        if (ta) ta.value = def;
+        toast('已恢复默认');
+    }));
+
+    wall.querySelector('[data-act="copyLogs"]')?.addEventListener('click', async () => {
+        const text = JSON.stringify(store.data().logs || [], null, 2);
+        try { await navigator.clipboard.writeText(text); toast('已复制'); }
+        catch { toast('复制不了，去浏览器控制台看 [日记本] 开头那几行', true); }
+    });
+
+    wall.querySelector('[data-act="clearLogs"]')?.addEventListener('click', () => {
+        if (!confirm('清空日志？')) return;
+        store.clearLogs();
+        refresh();
+    });
+
+    wall.querySelector('[data-act="export"]')?.addEventListener('click', () => {
+        const fmt = wall.querySelector('[data-s="__fmt"]').value;
         const name = getContext().name2 || 'diary';
         let blob, ext;
         if (fmt === 'md') {
-            const body = store.sortedEntries().map(e =>
-                `## ${e.date}　${e.title}\n\n${e.text}\n`).join('\n---\n\n');
+            const body = store.sortedEntries().map(e => `## ${e.date}　${e.title}\n\n${e.text}\n`).join('\n---\n\n');
             blob = new Blob([`# ${name} 的日记\n\n${body}`], { type: 'text/markdown' });
             ext = 'md';
         } else {
-            blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+            blob = new Blob([JSON.stringify(store.data(), null, 2)], { type: 'application/json' });
             ext = 'json';
         }
         const a = document.createElement('a');
@@ -909,8 +672,7 @@ function bindSettings(pane) {
         URL.revokeObjectURL(a.href);
     });
 
-    // 导入
-    pane.querySelector('[data-act="import"]')?.addEventListener('click', () => {
+    wall.querySelector('[data-act="import"]')?.addEventListener('click', () => {
         const inp = document.createElement('input');
         inp.type = 'file'; inp.accept = '.json';
         inp.addEventListener('change', async () => {
@@ -922,7 +684,7 @@ function bindSettings(pane) {
                 let added = 0, skipped = 0;
                 for (const e of incoming.entries || []) {
                     const clash = d.entries.find(x => x.date === e.date);
-                    if (clash && !confirm(`${e.date} 已经有一篇「${clash.title}」。\n用导入的这篇覆盖吗？`)) {
+                    if (clash && !confirm(`${e.date} 已经有一张「${clash.title}」。\n用导入的这张覆盖吗？`)) {
                         skipped++; continue;
                     }
                     if (clash) store.removeEntry(clash.id);
@@ -932,7 +694,7 @@ function bindSettings(pane) {
                 Object.assign(d.marks, incoming.marks || {});
                 store.save();
                 await store.saveChatFile();
-                toast(`导入 ${added} 篇${skipped ? `，跳过 ${skipped} 篇` : ''}`);
+                toast(`导入 ${added} 张${skipped ? `，跳过 ${skipped} 张` : ''}`);
                 refresh();
             } catch (e) { toast('文件读不了：' + e.message, true); }
         });
@@ -940,4 +702,4 @@ function bindSettings(pane) {
     });
 }
 
-export { refresh, toast as notify };
+export { toast as notify };

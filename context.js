@@ -4,7 +4,7 @@
  */
 
 import { getContext } from '../../../extensions.js';
-import { settings, data, uidOf } from './store.js';
+import { settings, data, uidOf, charRules } from './store.js';
 
 /* ────────── 正文提取 ────────── */
 
@@ -19,9 +19,10 @@ export function cleanText(msg) {
     const s = settings();
     let text = String(msg?.mes || '');
 
-    // 第一层：正则圈定范围
-    if (s.contentRegex?.trim()) {
-        const hits = runRegex(s.contentRegex, text);
+    // 第一层：正则圈定范围（用这张卡自己的规则）
+    const pattern = charRules().contentRegex;
+    if (pattern?.trim()) {
+        const hits = runRegex(pattern, text);
         if (hits.length) text = hits.join('\n\n');
     }
 
@@ -165,7 +166,7 @@ function budget(text, maxTokens) {
 export function previewExtract(msg) {
     const s = settings();
     const raw = String(msg?.mes || '');
-    const pattern = s.contentRegex?.trim();
+    const pattern = charRules().contentRegex?.trim();
     const final = cleanText(msg);
 
     if (pattern) {
@@ -192,13 +193,20 @@ export function previewExtract(msg) {
  * 抠到了就不用把整段正文喂给模型，省一大笔 token。
  */
 export function extractTime(msg) {
-    const s = settings();
-    const pattern = s.timeRegex?.trim();
+    const pattern = charRules().timeRegex?.trim();
     if (!pattern) return '';
     try {
-        const m = new RegExp(pattern, 'i').exec(String(msg?.mes || ''));
-        if (!m) return '';
-        return String(m[1] ?? m[0]).replace(/<[^>]*>/g, '').trim();
+        const re = new RegExp(pattern, 'gi');
+        const text = String(msg?.mes || '');
+        let last = null, m;
+        // 取最后一个匹配：一条消息里可能有回忆段落也带时间标签，
+        // 场景是往前推进的，最后那个才是当前时间。
+        while ((m = re.exec(text)) !== null) {
+            last = m;
+            if (m.index === re.lastIndex) re.lastIndex++;
+        }
+        if (!last) return '';
+        return String(last[1] ?? last[0]).replace(/<[^>]*>/g, '').trim();
     } catch {
         return '';   // 正则写错了，当作没填
     }
