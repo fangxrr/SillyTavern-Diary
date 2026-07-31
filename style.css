@@ -230,54 +230,26 @@ body.tw-lock { overflow: hidden; }
 }
 
 /* ═══ 摊开的一页 ═══
-   独立挂在 body 上，不在 #tw-root 里面。
-   这样无论酒馆的主题给外层套了什么容器、transform 或层叠上下文，
-   它都不会被压到便签底下。 */
-#tw-layer {
-    --tw-paper: #cec8bb;
-    --tw-paper-old: #bcb5a6;
-    --tw-paper-new: #ded8cb;
-    --tw-ink: #302d28;
-    --tw-ink-2: #6a655b;
-    --tw-ribbon: #8a3f36;
-    --tw-mono: "Courier New", Courier, ui-monospace, monospace;
-    --tw-song: "Songti SC", "SimSun", "STSong", "Noto Serif SC", serif;
-    --tw-r-s: 8px;
-    --tw-r-l: 14px;
-    --tw-r-full: 999px;
-
-    position: fixed;
-    top: 0; right: 0; bottom: 0; left: 0;
-    z-index: 10050;
-    display: none;
-    padding: 20px;
-    background: rgba(6, 6, 5, .88);
-    overflow-y: auto;
-    /* 这里不能加 -webkit-overflow-scrolling:touch —— 它在 iOS 上会把元素
-       提成独立合成层，反而让遮罩沉到内容底下。该属性也已废弃。 */
+   画在便签墙里，不用浮层。酒馆主题常给容器加 transform，
+   那会让 position:fixed 相对容器定位而不是视口，浮层就会跑到内容后面。 */
+.tw-pagewrap { max-width: 560px; margin: 0 auto; padding-bottom: 12px; }
+.tw-back {
+    appearance: none; cursor: pointer; font-family: var(--tw-mono);
+    background: transparent; border: 1px solid #2c2b28; color: var(--tw-dust);
+    font-size: 11px; letter-spacing: .12em;
+    padding: 8px 16px; border-radius: var(--tw-r-full);
+    margin-bottom: 14px; transition: .15s;
 }
-#tw-layer *, #tw-layer *::before, #tw-layer *::after { box-sizing: border-box; }
-/* 用 flex-start + margin:auto 居中。
-   直接写 align-items:center 的话，内容比屏幕高时顶部会溢出且滚不回去。 */
-#tw-layer[data-on] { display: flex; align-items: flex-start; justify-content: center; }
+.tw-back:hover { color: var(--tw-paper); border-color: var(--tw-metal); }
 .tw-page {
-    width: 100%; max-width: 560px;
-    margin: auto;
-    color: var(--tw-ink); padding: 36px 36px 26px;
+    color: var(--tw-ink); padding: 32px 32px 24px;
     border-radius: var(--tw-r-l);
     background-image:
         repeating-linear-gradient(0deg, rgba(0,0,0,.013) 0 1px, transparent 1px 2px),
         linear-gradient(172deg, var(--tw-paper-new), var(--tw-paper) 60%, var(--tw-paper-old));
-    box-shadow: 0 26px 60px rgba(0,0,0,.75);
-    transform: rotate(-.4deg);
+    box-shadow: 0 18px 44px rgba(0,0,0,.6);
 }
-/* 读一张纸的时候，把右上角的收起按钮让开，免得压在纸上误点 */
-#tw-root.tw-reading .tw-shut { opacity: 0; pointer-events: none; }
-#tw-root.tw-reading .tw-room { pointer-events: none; }
-@media (max-width: 640px) {
-    .tw-page { padding: 26px 20px 20px; transform: none; }
-    #tw-layer { padding: 12px; }
-}
+@media (max-width: 640px) { .tw-page { padding: 24px 18px 18px; } }
 .tw-page__head {
     font-family: var(--tw-mono); font-size: 11px; letter-spacing: .16em; color: var(--tw-ink-2);
     border-bottom: 1px solid rgba(48,45,40,.2); padding-bottom: 11px; margin-bottom: 18px;
@@ -292,7 +264,6 @@ body.tw-lock { overflow: hidden; }
     border: 1px solid rgba(48,45,40,.28); border-radius: var(--tw-r-s); padding: 12px 14px;
 }
 .tw-editor:focus { outline: none; border-color: rgba(48,45,40,.5); }
-#tw-layer textarea { font-family: var(--tw-song); }
 .tw-page__foot {
     margin-top: 24px; padding-top: 15px; border-top: 1px solid rgba(48,45,40,.2);
     display: flex; gap: 8px; flex-wrap: wrap; align-items: center;

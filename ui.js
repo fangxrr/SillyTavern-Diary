@@ -22,9 +22,8 @@ const cnDate = iso => {
 };
 
 let root = null;
-let layer = null;   // 摊开的那一页。单独挂在 body 上，不放进 #tw-root，
-                    // 免得被主题或容器的层叠上下文压到下面去。
 let view = 'wall';
+let openId = null;   // 正在摊开的是哪一张
 let calCursor = null;
 
 function toast(msg, bad = false) {
@@ -54,7 +53,6 @@ export function open() {
 }
 
 export function close() {
-    closePage();
     root?.classList.remove('tw-on');
     document.body.classList.remove('tw-lock');
 }
@@ -62,7 +60,6 @@ export function close() {
 function build() {
     // 扩展热重载时可能留下上一轮的节点，先清干净
     document.getElementById('tw-root')?.remove();
-    document.getElementById('tw-layer')?.remove();
 
     root = document.createElement('div');
     root.id = 'tw-root';
@@ -86,12 +83,6 @@ function build() {
       </div>`;
     document.body.appendChild(root);
 
-    // 摊开的一页单独一层，挂在 body 末尾。
-    layer = document.createElement('div');
-    layer.id = 'tw-layer';
-    layer.innerHTML = `<div class="tw-page"></div>`;
-    document.body.appendChild(layer);
-
     root.querySelector('.tw-shut').addEventListener('click', close);
 
     root.addEventListener('click', ev => {
@@ -101,23 +92,17 @@ function build() {
         if (slip) { spread(slip.dataset.id); return; }
     });
 
-    // 点纸以外的地方合上；点在纸上不关
-    layer.addEventListener('click', ev => {
-        if (ev.target === layer) closePage();
-        const key = ev.target.closest('[data-k]');
-        if (key) { closePage(); go(key.dataset.k); }
-    });
-
     document.addEventListener('keydown', e => {
         if (e.key !== 'Escape' || !root?.classList.contains('tw-on')) return;
-        layer.hasAttribute('data-on') ? closePage() : close();
+        view === 'page' ? go('wall') : close();
     });
 }
 
 function go(k) {
     view = k;
+    const lit = k === 'page' ? 'wall' : k;
     root.querySelectorAll('.tw-key[data-k]').forEach(b =>
-        b.setAttribute('aria-pressed', String(b.dataset.k === k)));
+        b.setAttribute('aria-pressed', String(b.dataset.k === lit)));
 
     const ctx = getContext();
     let brand = String(ctx.name2 || '').trim();
@@ -127,7 +112,7 @@ function go(k) {
 
     const wall = root.querySelector('.tw-wall');
     wall.scrollTop = 0;
-    ({ wall: viewWall, cal: viewCal, set: viewSet, new: viewNew }[k] || viewWall)(wall);
+    ({ wall: viewWall, cal: viewCal, set: viewSet, new: viewNew, page: viewPage }[k] || viewWall)(wall);
 }
 
 function feed(html) { root.querySelector('.tw-feed__t').innerHTML = html; }
@@ -167,43 +152,62 @@ function slipHtml(e, i) {
 }
 
 /* ══════════════ 摊开一页 ══════════════ */
+/*
+ * 直接画在便签墙的位置上，不用浮层。
+ * 酒馆的主题常给外层容器加 transform，那会让 position:fixed 相对容器定位
+ * 而不是视口，浮层就会跑到内容后面去。视图切换没有这个问题。
+ */
 
 function spread(id) {
-    const e = store.data().entries.find(x => x.id === id);
-    if (!e) return;
+    openId = id;
+    go('page');
+}
+
+function viewPage(wall) {
+    const e = store.data().entries.find(x => x.id === openId);
+    if (!e) { go('wall'); return; }
+
     const a = store.indexOfUid(e.startUid), b = store.indexOfUid(e.endUid);
     const alive = a >= 0 && b >= a;
-    const page = layer.querySelector('.tw-page');
+    feed(`在读 · ${esc(e.date || '')}`);
 
-    page.innerHTML = `
-      <div class="tw-page__head">
-        <span>${esc(String(e.date || '').replace(/-/g, ' . '))}</span>
-        <span>${alive ? `第 ${a}–${b} 层` : '源楼层已删'} · ${e.source === 'manual' ? '手动' : '自动'}</span>
-      </div>
-      <div class="tw-page__title">${esc(e.title || '(无标题)')}</div>
-      <div class="tw-page__text" data-role="text">${esc(e.text)}</div>
-      <div class="tw-page__foot">
-        ${e.spanFrom ? `<span class="tw-pbtn" style="cursor:default">含 ${esc(e.spanFrom)} 起</span>` : ''}
-        <button class="tw-pbtn" data-e="pin" style="margin-left:auto">${e.pinned ? '取下' : '钉住'}</button>
-        <button class="tw-pbtn" data-e="edit">改写</button>
-        ${alive ? '<button class="tw-pbtn" data-e="rewrite">重写</button>' : ''}
-        <button class="tw-pbtn tw-pbtn--ribbon" data-e="del">撕掉</button>
+    wall.className = 'tw-wall tw-wall--solo';
+    wall.innerHTML = `
+      <div class="tw-pagewrap">
+        <button class="tw-back" data-k="wall">← 回到墙上</button>
+        <div class="tw-page">
+          <div class="tw-page__head">
+            <span>${esc(String(e.date || '').replace(/-/g, ' . '))}</span>
+            <span>${alive ? `第 ${a}–${b} 层` : '源楼层已删'} · ${e.source === 'manual' ? '手动' : '自动'}</span>
+          </div>
+          <div class="tw-page__title">${esc(e.title || '(无标题)')}</div>
+          <div class="tw-page__text" data-role="text">${esc(e.text)}</div>
+          <div class="tw-page__foot">
+            ${e.spanFrom ? `<span class="tw-pbtn" style="cursor:default">含 ${esc(e.spanFrom)} 起</span>` : ''}
+            <button class="tw-pbtn" data-e="pin" style="margin-left:auto">${e.pinned ? '取下' : '钉住'}</button>
+            <button class="tw-pbtn" data-e="edit">改写</button>
+            ${alive ? '<button class="tw-pbtn" data-e="rewrite">重写</button>' : ''}
+            <button class="tw-pbtn tw-pbtn--ribbon" data-e="del">撕掉</button>
+          </div>
+        </div>
       </div>`;
 
+    const page = wall.querySelector('.tw-page');
     page.querySelectorAll('[data-e]').forEach(btn => btn.addEventListener('click', async ev => {
         ev.stopPropagation();
         const act = btn.dataset.e;
 
         if (act === 'pin') {
-            store.updateEntry(id, { pinned: !e.pinned });
+            store.updateEntry(id_of(e), { pinned: !e.pinned });
             await store.saveChatFile();
-            closePage(); refresh();
+            go('wall');
         }
         if (act === 'del') {
             if (!confirm('撕掉这张？撕了就没了。')) return;
-            store.removeEntry(id);
+            store.removeEntry(id_of(e));
             await store.saveChatFile();
-            closePage(); refresh();
+            toast('撕掉了');
+            go('wall');
         }
         if (act === 'edit') {
             const box = page.querySelector('[data-role="text"]');
@@ -213,37 +217,32 @@ function spread(id) {
             ta.dataset.role = 'text';
             ta.value = e.text;
             box.replaceWith(ta);
+            ta.focus();
             btn.textContent = '存下';
             btn.dataset.e = 'save';
         }
         if (act === 'save') {
-            store.updateEntry(id, { text: page.querySelector('textarea[data-role="text"]').value });
+            store.updateEntry(id_of(e), { text: page.querySelector('textarea[data-role="text"]').value });
             await store.saveChatFile();
             toast('存好了');
-            closePage(); refresh();
+            go('page');
         }
         if (act === 'rewrite') {
             btn.textContent = '打字中'; btn.disabled = true;
             try {
-                await engine.rewrite(id);
+                await engine.rewrite(id_of(e));
                 await store.saveChatFile();
                 toast('重写好了');
-                closePage(); refresh();
+                go('page');
             } catch (err) {
                 toast(err.message, true);
                 btn.textContent = '重写'; btn.disabled = false;
             }
         }
     }));
-
-    layer.setAttribute('data-on', '');
-    root.classList.add('tw-reading');
 }
 
-function closePage() {
-    layer?.removeAttribute('data-on');
-    root?.classList.remove('tw-reading');
-}
+const id_of = e => e.id;
 
 /* ══════════════ 日历 ══════════════ */
 
