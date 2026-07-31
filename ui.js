@@ -940,4 +940,4 @@ function bindSettings(pane) {
     });
 }
 
-export { refresh };
+export { refresh, toast as notify };

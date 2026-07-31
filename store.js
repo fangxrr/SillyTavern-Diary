@@ -246,7 +246,7 @@ function defaultSettings() {
         apiWrite: {
             mode: 'standalone',
             url: '', key: '', model: '', profile: '',
-            temp: 0.9, max: 1200,
+            temp: 0.9, max: 2000,
         },
 
         world: { enabled: true, books: [], constantOnly: true, budget: 2000 },

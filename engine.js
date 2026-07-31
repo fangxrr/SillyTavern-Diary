@@ -78,7 +78,7 @@ export async function detectStartDate(force = false) {
     }
 
     try {
-        const out = await api.chat(s.apiTime, ctxLib.buildStartPrompt(first));
+        const out = (await api.chat(s.apiTime, ctxLib.buildStartPrompt(first))).text;
         const date = normDate(api.parseJson(out)?.date);
         if (date) { d.startDate = date; store.save(); emit('meta'); return date; }
     } catch (e) {
@@ -163,7 +163,7 @@ export async function tagDates(messages) {
     if (ask.length) {
         try {
             const prompt = ctxLib.buildTimePrompt(ask, allHaveFrag ? frags : null);
-            const out = await api.chat(s.apiTime, prompt);
+            const out = (await api.chat(s.apiTime, prompt)).text;
             for (const it of (api.parseJson(out)?.items || [])) {
                 const m = ask[Number(it.i)];
                 if (!m) continue;
@@ -220,7 +220,7 @@ export async function probeContentRegex() {
     if (!msg) throw new Error('聊天里还没有角色回复');
 
     const s = store.settings();
-    const out = await api.chat(s.apiWrite, ctxLib.buildContentProbePrompt(msg));
+    const out = (await api.chat(s.apiWrite, ctxLib.buildContentProbePrompt(msg))).text;
     const r = api.parseJson(out);
     if (!r?.regex) throw new Error(r?.note || '没找到清晰的正文边界，得手动填');
 
@@ -253,7 +253,7 @@ export async function probeTimeRegex() {
     if (!first) throw new Error('聊天里还没有角色回复');
 
     const s = store.settings();
-    const out = await api.chat(s.apiTime, ctxLib.buildRegexProbePrompt(first));
+    const out = (await api.chat(s.apiTime, ctxLib.buildRegexProbePrompt(first))).text;
     const r = api.parseJson(out);
     if (!r?.regex) throw new Error('没找到专门放时间的标签，手动填一个吧');
 
@@ -285,21 +285,30 @@ export async function write({ messages, date, spanFrom = '', source = 'auto' }) 
     const s = store.settings();
     const prompt = await ctxLib.buildWritePrompt(date, messages);
     const body = prompt[0].content;
-    const raw = await api.chat(s.apiWrite, prompt);
-    const { title, text } = splitTitle(raw);
+    const r = await api.chat(s.apiWrite, prompt);
+    const { title, text } = splitTitle(r.text);
+    warnIfCut(r, date);
 
     const entry = store.addEntry({
         date, title, text, source, spanFrom,
         startUid: store.uidOf(messages[0]),
         endUid: store.uidOf(messages.at(-1)),
     });
-    store.addLog(await auditOf('写日记', date, messages, body, raw, entry.id));
+    store.addLog(await auditOf('写日记', date, messages, body, r, entry.id));
     emit('entry');
     return entry;
 }
 
+/** 被 max_tokens 切断时提醒一句，否则半截日记会被悄悄存下来 */
+function warnIfCut(r, date) {
+    if (!api.wasTruncated(r)) return;
+    const cap = store.settings().apiWrite.max;
+    store.addLog({ kind: '⚠ 写到一半被截断', date, 上限: cap, 用量: r.usage || null });
+    emit('warn', `${date} 这篇没写完 —— 撞到了「上限 ${cap}」。把写日记那栏的上限调大，再点这篇的「重写」。`);
+}
+
 /** 把这次生成的来龙去脉整理成一条日志 */
-async function auditOf(kind, date, messages, promptBody, reply, entryId) {
+async function auditOf(kind, date, messages, promptBody, r, entryId) {
     const world = await ctxLib.readWorld();
     const memory = await ctxLib.readMemory();
     return {
@@ -323,7 +332,10 @@ async function auditOf(kind, date, messages, promptBody, reply, entryId) {
         注入: { 世界书: world.length, 前情: memory.length },
         提示词字数: promptBody.length,
         提示词开头: promptBody.slice(0, 1200),
-        回复字数: String(reply).length,
+        回复字数: String(r.text).length,
+        结束原因: r.finish || '(没给)',
+        写完了吗: api.wasTruncated(r) ? '否 —— 撞上限被截断' : '是',
+        用量: r.usage || null,
     };
 }
 
@@ -349,15 +361,16 @@ async function extendEntry(entry, group) {
 
     const s = store.settings();
     const prompt = await ctxLib.buildWritePrompt(entry.date, full);
-    const raw = await api.chat(s.apiWrite, prompt);
-    const { title, text } = splitTitle(raw);
+    const r = await api.chat(s.apiWrite, prompt);
+    const { title, text } = splitTitle(r.text);
+    warnIfCut(r, entry.date);
     store.updateEntry(entry.id, {
         title: title || entry.title,
         text,
         endUid,
         spanFrom: group.spanFrom || entry.spanFrom,
     });
-    store.addLog(await auditOf('整天重写', entry.date, full, prompt[0].content, raw, entry.id));
+    store.addLog(await auditOf('整天重写', entry.date, full, prompt[0].content, r, entry.id));
     emit('entry');
 }
 
@@ -473,8 +486,9 @@ export async function rewrite(id) {
     running = true; emit('busy');
     try {
         const s = store.settings();
-        const raw = await api.chat(s.apiWrite, await ctxLib.buildWritePrompt(e.date, msgs));
-        const { title, text } = splitTitle(raw);
+        const r = await api.chat(s.apiWrite, await ctxLib.buildWritePrompt(e.date, msgs));
+        const { title, text } = splitTitle(r.text);
+        warnIfCut(r, e.date);
         store.updateEntry(id, { title: title || e.title, text });
         emit('entry');
     } finally {

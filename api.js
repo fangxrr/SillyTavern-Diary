@@ -66,12 +66,19 @@ async function callStandalone(cfg, messages, signal) {
     if (!res.ok) throw new Error(await describeError(res));
 
     const json = await res.json();
-    const text = json?.choices?.[0]?.message?.content
-        ?? json?.choices?.[0]?.text
+    const choice = json?.choices?.[0];
+    const text = choice?.message?.content
+        ?? choice?.text
         ?? json?.content?.[0]?.text
         ?? '';
     if (!text) throw new Error('返回是空的');
-    return String(text).trim();
+
+    return {
+        text: String(text).trim(),
+        // 'length' / 'max_tokens' 都表示写到一半被上限切断了
+        finish: choice?.finish_reason ?? choice?.stop_reason ?? json?.stop_reason ?? '',
+        usage: json?.usage || null,
+    };
 }
 
 async function describeError(res) {
@@ -110,30 +117,42 @@ async function callTavern(cfg, messages) {
             cfg.profile, prompt, Number(cfg.max) || 1000,
         );
         const text = r?.content ?? r?.choices?.[0]?.message?.content ?? r;
-        if (text) return String(text).trim();
+        if (text) {
+            return {
+                text: String(text).trim(),
+                finish: r?.choices?.[0]?.finish_reason ?? '',
+                usage: r?.usage || null,
+            };
+        }
     }
 
     // 退路：用酒馆当前连着的那个，静默生成，不写进聊天记录
     if (typeof ctx.generateQuietPrompt === 'function') {
         const text = await ctx.generateQuietPrompt(prompt, false, false);
-        if (text) return String(text).trim();
+        if (text) return { text: String(text).trim(), finish: '', usage: null };
     }
     throw new Error('酒馆这边没能发出请求。换成「独立 API」试试。');
 }
 
 /* ────────── 统一入口 ────────── */
 
+/** 返回 { text, finish, usage }。finish 为 length/max_tokens 表示被上限截断。 */
 export async function chat(cfg, messages, signal) {
     return cfg.mode === 'tavern'
         ? callTavern(cfg, messages)
         : callStandalone(cfg, messages, signal);
 }
 
+/** 这次回复是不是写到一半被 max_tokens 切断了 */
+export function wasTruncated(r) {
+    return /^(length|max_tokens|MAX_TOKENS)$/i.test(String(r?.finish || ''));
+}
+
 /** 测试连接，返回一句人话 */
 export async function testConnection(cfg) {
     const t0 = Date.now();
-    const out = await chat(cfg, [{ role: 'user', content: '回复"ok"两个字母，不要别的。' }]);
-    return `通了（${Date.now() - t0}ms）：${out.slice(0, 40)}`;
+    const r = await chat(cfg, [{ role: 'user', content: '回复"ok"两个字母，不要别的。' }]);
+    return `通了（${Date.now() - t0}ms）：${r.text.slice(0, 40)}`;
 }
 
 /** 从模型输出里抠 JSON，容忍它多嘴 */

@@ -60,8 +60,12 @@ function boot() {
         if (!store.settings().waitNext) scheduleTick();
     });
 
-    // 引擎有动静就刷新界面
-    engine.onChange(() => ui.refresh());
+    // 引擎有动静就刷新界面；写歪了要出声，不能闷着
+    engine.onChange((ev, payload) => {
+        if (ev === 'warn') ui.notify(String(payload), true);
+        if (ev === 'error') ui.notify(payload?.message || '写日记失败', true);
+        ui.refresh();
+    });
 
     // 兜底：魔棒菜单可能比扩展晚建好
     const retry = setInterval(() => {
