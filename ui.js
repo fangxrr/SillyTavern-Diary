@@ -22,6 +22,8 @@ const cnDate = iso => {
 };
 
 let root = null;
+let layer = null;   // 摊开的那一页。单独挂在 body 上，不放进 #tw-root，
+                    // 免得被主题或容器的层叠上下文压到下面去。
 let view = 'wall';
 let calCursor = null;
 
@@ -52,11 +54,16 @@ export function open() {
 }
 
 export function close() {
+    closePage();
     root?.classList.remove('tw-on');
     document.body.classList.remove('tw-lock');
 }
 
 function build() {
+    // 扩展热重载时可能留下上一轮的节点，先清干净
+    document.getElementById('tw-root')?.remove();
+    document.getElementById('tw-layer')?.remove();
+
     root = document.createElement('div');
     root.id = 'tw-root';
     root.innerHTML = `
@@ -76,9 +83,14 @@ function build() {
             </div>
           </div>
         </div>
-      </div>
-      <div class="tw-open"><div class="tw-page"></div></div>`;
+      </div>`;
     document.body.appendChild(root);
+
+    // 摊开的一页单独一层，挂在 body 末尾。
+    layer = document.createElement('div');
+    layer.id = 'tw-layer';
+    layer.innerHTML = `<div class="tw-page"></div>`;
+    document.body.appendChild(layer);
 
     root.querySelector('.tw-shut').addEventListener('click', close);
 
@@ -87,12 +99,18 @@ function build() {
         if (key) { go(key.dataset.k); return; }
         const slip = ev.target.closest('.tw-slip[data-id]');
         if (slip) { spread(slip.dataset.id); return; }
-        if (ev.target === root.querySelector('.tw-open')) closePage();
+    });
+
+    // 点纸以外的地方合上；点在纸上不关
+    layer.addEventListener('click', ev => {
+        if (ev.target === layer) closePage();
+        const key = ev.target.closest('[data-k]');
+        if (key) { closePage(); go(key.dataset.k); }
     });
 
     document.addEventListener('keydown', e => {
         if (e.key !== 'Escape' || !root?.classList.contains('tw-on')) return;
-        root.querySelector('.tw-open').hasAttribute('data-on') ? closePage() : close();
+        layer.hasAttribute('data-on') ? closePage() : close();
     });
 }
 
@@ -155,7 +173,7 @@ function spread(id) {
     if (!e) return;
     const a = store.indexOfUid(e.startUid), b = store.indexOfUid(e.endUid);
     const alive = a >= 0 && b >= a;
-    const page = root.querySelector('.tw-page');
+    const page = layer.querySelector('.tw-page');
 
     page.innerHTML = `
       <div class="tw-page__head">
@@ -218,13 +236,13 @@ function spread(id) {
         }
     }));
 
-    root.querySelector('.tw-open').setAttribute('data-on', '');
+    layer.setAttribute('data-on', '');
     root.classList.add('tw-reading');
 }
 
 function closePage() {
-    root.querySelector('.tw-open').removeAttribute('data-on');
-    root.classList.remove('tw-reading');
+    layer?.removeAttribute('data-on');
+    root?.classList.remove('tw-reading');
 }
 
 /* ══════════════ 日历 ══════════════ */
