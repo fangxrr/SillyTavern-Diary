@@ -102,7 +102,9 @@ function go(k) {
         b.setAttribute('aria-pressed', String(b.dataset.k === k)));
 
     const ctx = getContext();
-    root.querySelector('.tw-brand').textContent = (ctx.name2 || 'DIARY').split('').join(' ');
+    let brand = String(ctx.name2 || '').trim();
+    if (!brand || /^silly\s*tavern/i.test(brand)) brand = 'DIARY';
+    root.querySelector('.tw-brand').textContent = brand.split('').join(' ');
     root.querySelector('.tw-key[data-k="wall"] b').textContent = store.data().entries.length;
 
     const wall = root.querySelector('.tw-wall');
@@ -217,10 +219,12 @@ function spread(id) {
     }));
 
     root.querySelector('.tw-open').setAttribute('data-on', '');
+    root.classList.add('tw-reading');
 }
 
 function closePage() {
     root.querySelector('.tw-open').removeAttribute('data-on');
+    root.classList.remove('tw-reading');
 }
 
 /* ══════════════ 日历 ══════════════ */
@@ -248,7 +252,7 @@ function viewCal(wall) {
                     data-d="${key}" title="${esc(d.marks[key] || '')}">${n}</div>`;
     }
 
-    wall.className = 'tw-wall tw-wall--solo';
+    wall.className = 'tw-wall tw-wall--center';
     wall.innerHTML = `
       <div class="tw-calwrap">
         <div class="tw-cal__nav">
@@ -306,7 +310,7 @@ function viewNew(wall) {
     feed('补写 · 选好范围按「动笔」');
     const len = (getContext().chat?.length || 1) - 1;
 
-    wall.className = 'tw-wall tw-wall--solo';
+    wall.className = 'tw-wall tw-wall--center';
     wall.innerHTML = `
       <div class="tw-spec" style="max-width:460px">
         <div class="tw-spec__h">补 写 一 张</div>

@@ -71,6 +71,10 @@ body.tw-lock { overflow: hidden; }
     overflow-y: auto;
 }
 .tw-wall--solo { display: block; }
+/* 内容不多的视图（日历、补写）垂直居中。
+   用 auto margin 而不是 justify-content:center —— 后者在内容超高时会裁掉顶部。 */
+.tw-wall--center { display: flex; align-items: flex-start; justify-content: center; }
+.tw-wall--center > * { margin: auto; width: 100%; }
 .tw-wall::-webkit-scrollbar { width: 6px; }
 .tw-wall::-webkit-scrollbar-thumb { background: #22211f; border-radius: 3px; }
 
@@ -226,23 +230,31 @@ body.tw-lock { overflow: hidden; }
 /* ═══ 摊开的一页 ═══ */
 .tw-open {
     position: fixed; inset: 0; z-index: 50; display: none;
-    align-items: center; justify-content: center; padding: 22px;
-    background: rgba(6,6,5,.86);
+    padding: 20px;
+    background: rgba(6,6,5,.88);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
-.tw-open[data-on] { display: flex; }
+/* 用 flex-start + margin:auto 居中。
+   直接写 align-items:center 的话，内容比屏幕高时顶部会溢出且滚不回去。 */
+.tw-open[data-on] { display: flex; align-items: flex-start; justify-content: center; }
 .tw-page {
-    width: 100%; max-width: 520px; max-height: 84vh; overflow-y: auto;
-    color: var(--tw-ink); padding: 34px 34px 26px;
+    width: 100%; max-width: 560px;
+    margin: auto;
+    color: var(--tw-ink); padding: 36px 36px 26px;
     border-radius: var(--tw-r-l);
     background-image:
         repeating-linear-gradient(0deg, rgba(0,0,0,.013) 0 1px, transparent 1px 2px),
         linear-gradient(172deg, var(--tw-paper-new), var(--tw-paper) 60%, var(--tw-paper-old));
     box-shadow: 0 26px 60px rgba(0,0,0,.75);
-    transform: rotate(-.5deg);
+    transform: rotate(-.4deg);
 }
-.tw-page::-webkit-scrollbar { width: 5px; }
-.tw-page::-webkit-scrollbar-thumb { background: rgba(48,45,40,.3); border-radius: 3px; }
-@media (max-width: 640px) { .tw-page { padding: 26px 20px 20px; max-height: 88vh; } .tw-open { padding: 12px; } }
+/* 读一张纸的时候，把右上角的收起按钮让开，免得压在纸上误点 */
+#tw-root.tw-reading .tw-shut { opacity: 0; pointer-events: none; }
+@media (max-width: 640px) {
+    .tw-page { padding: 26px 20px 20px; transform: none; }
+    .tw-open { padding: 12px; }
+}
 .tw-page__head {
     font-family: var(--tw-mono); font-size: 11px; letter-spacing: .16em; color: var(--tw-ink-2);
     border-bottom: 1px solid rgba(48,45,40,.2); padding-bottom: 11px; margin-bottom: 18px;
