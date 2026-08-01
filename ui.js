@@ -433,12 +433,18 @@ async function viewSet(wall) {
           <p>填了就只从这一小段读日期，不必把整段正文喂给模型，省很多。</p>
           <input type="text" data-rule="timeRegex" value="${esc(rules.timeRegex)}"
             placeholder="&lt;Ti&gt;([^&lt;]*)&lt;/Ti&gt;" style="width:100%;margin-top:8px">
-          <div class="tw-probe"><button class="tw-pbtn tw-pbtn--dim" data-act="probeTime">让它读一条，猜猜看</button>
+          <div class="tw-probe"><button class="tw-pbtn tw-pbtn--dim" data-act="tryTime">试一下</button>
+            <button class="tw-pbtn tw-pbtn--dim" data-act="probeTime">让它读一条，猜猜看</button>
             <span data-out="time"></span></div></div></div>
         <div class="tw-r"><div class="tw-r__t"><label>故事从哪天开始</label></div>
           <div class="tw-r__c"><input type="text" data-s="__start" value="${esc(d.startDate)}"
             placeholder="YYYY-MM-DD" style="width:118px">
             <button class="tw-pbtn tw-pbtn--dim" data-act="redetect">重新读</button></div></div>
+        <div class="tw-r"><div class="tw-r__t"><label>重算所有日期</label>
+          <p>忘掉之前判过的日期，下次写日记时按当前的正则和起始日重新算一遍。
+             改了正则或起始日之后点一次。</p>
+          <div class="tw-probe"><button class="tw-pbtn tw-pbtn--dim" data-act="clearDates">忘掉重算</button>
+            <span data-out="dates"></span></div></div></div>
 
         <div class="tw-spec__h">F ─ 怎 么 写</div>
         <textarea data-s="writePrompt">${esc(s.writePrompt)}</textarea>
@@ -628,6 +634,24 @@ function bindSettings(wall) {
         b.textContent = '让它读一条，猜猜看'; b.disabled = false;
     });
 
+    // 试一下时间正则：纯本地，不发请求
+    wall.querySelector('[data-act="tryTime"]')?.addEventListener('click', () => {
+        const out = wall.querySelector('[data-out="time"]');
+        const chat = getContext().chat || [];
+        const msg = [...chat].reverse().find(m => !m.is_user && String(m.mes || '').trim());
+        if (!msg) { out.textContent = '聊天里还没有角色回复'; return; }
+
+        const frag = ctxLib.extractTime(msg);
+        if (!frag) {
+            out.textContent = '抠不到。检查标签名对不对，以及有没有写捕获组 ( )';
+            return;
+        }
+        const date = engine.tryParseDate(frag);
+        out.textContent = date
+            ? `抠到「${frag.slice(0, 30)}」→ ${date}，本地就能算，不花钱`
+            : `抠到「${frag.slice(0, 30)}」，但认不出格式，会交给模型判断`;
+    });
+
     wall.querySelector('[data-act="probeTime"]')?.addEventListener('click', async ev => {
         const b = ev.currentTarget, out = wall.querySelector('[data-out="time"]');
         b.textContent = '读…'; b.disabled = true; out.textContent = '';
@@ -638,6 +662,14 @@ function bindSettings(wall) {
             out.textContent = r.sample ? `抓到：${r.sample.slice(0, 44)}` : '已填入，确认一下';
         } catch (e) { out.textContent = e.message; }
         b.textContent = '让它读一条，猜猜看'; b.disabled = false;
+    });
+
+    wall.querySelector('[data-act="clearDates"]')?.addEventListener('click', () => {
+        const n = Object.keys(store.data().dateIndex || {}).length;
+        if (!confirm(`忘掉已经判过的 ${n} 条日期记录？\n已经写好的日记不受影响。`)) return;
+        store.clearDateIndex();
+        wall.querySelector('[data-out="dates"]').textContent = `已忘掉 ${n} 条，下次写日记会重新算`;
+        toast('已清空日期缓存');
     });
 
     wall.querySelector('[data-act="redetect"]')?.addEventListener('click', async ev => {

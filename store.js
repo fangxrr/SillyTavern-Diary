@@ -71,6 +71,12 @@ export function addLog(rec) {
     console.log('[日记本]', rec.kind, rec);
 }
 
+export function clearDateIndex() {
+    const d = data();
+    d.dateIndex = {};
+    save();
+}
+
 export function clearLogs() {
     data().logs = [];
     save();

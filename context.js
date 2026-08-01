@@ -193,8 +193,14 @@ export function previewExtract(msg) {
  * 抠到了就不用把整段正文喂给模型，省一大笔 token。
  */
 export function extractTime(msg) {
-    const pattern = charRules().timeRegex?.trim();
+    let pattern = charRules().timeRegex?.trim();
     if (!pattern) return '';
+
+    // 常见手误：写成 <Ti></Ti> 这种没有捕获组的形式，
+    // 只会匹配紧挨着的空标签，永远抠不到东西。自动补上捕获组。
+    const empty = pattern.match(/^(<(\w+)[^>]*>)\s*(<\/\2>)$/i);
+    if (empty) pattern = `${empty[1]}([\\s\\S]*?)${empty[3]}`;
+
     try {
         const re = new RegExp(pattern, 'gi');
         const text = String(msg?.mes || '');

@@ -60,22 +60,22 @@ export function pending() {
 
 export async function detectStartDate(force = false) {
     const d = store.data();
-    if (d.startDate && !force) return d.startDate;
-
     const chat = getContext().chat || [];
     // 开场白之后的第一条角色回复；找不到就退回开场白
     const first = chat.find((m, i) => i > 0 && !m.is_user && ctxLib.worthReading(m))
         || chat.find(m => ctxLib.worthReading(m));
-    if (!first) return '';
+    if (!first) return d.startDate;
 
     const s = store.settings();
 
-    // 先试正则 + 本地解析，能白嫖就不花钱
+    // 正则抠得到就以它为准。这条比缓存可靠，配好正则后应当立刻生效。
     const frag = ctxLib.extractTime(first);
     if (frag) {
         const local = parseLocalDate(frag, s.startYearFallback);
         if (local) { d.startDate = local; store.save(); emit('meta'); return local; }
     }
+
+    if (d.startDate && !force) return d.startDate;
 
     try {
         const out = (await api.chat(s.apiTime, ctxLib.buildStartPrompt(first))).text;
@@ -161,15 +161,19 @@ export async function tagDates(messages) {
 
     for (const m of messages) {
         const uid = store.uidOf(m);
-        if (d.dateIndex[uid]) continue;
 
+        // 先试正则 + 本地解析。算得出就以它为准，直接覆盖缓存——
+        // 缓存可能是早期起始日或正则还没配好时留下的错值，不能一直沿用。
         const frag = ctxLib.extractTime(m);
         if (frag) {
             const local = parseLocalDate(frag, year);
-            if (local) { d.dateIndex[uid] = local; continue; }  // 白嫖成功
-        } else {
-            allHaveFrag = false;
+            if (local) { d.dateIndex[uid] = local; continue; }
         }
+
+        // 本地算不出，才看缓存
+        if (d.dateIndex[uid]) continue;
+
+        if (!frag) allHaveFrag = false;
         ask.push(m);
         frags.push(frag);
     }
@@ -520,6 +524,13 @@ export async function dateOfMessage(uid) {
     const msg = getContext().chat[i];
     await tagDates([msg]);
     return d.dateIndex[uid] || '';
+}
+
+/** 供界面试跑用：拿一段文本试本地解析，解析不出返回空串 */
+export function tryParseDate(text) {
+    const d = store.data();
+    const year = (d.startDate || '').slice(0, 4) || store.settings().startYearFallback;
+    return parseLocalDate(text, year);
 }
 
 export { normDate };
