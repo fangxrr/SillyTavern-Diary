@@ -87,11 +87,17 @@ export function numbered(messages) {
     }).join('\n\n');
 }
 
-/** 不带编号，供写日记用 */
+/** 把一批消息拼成正文，供写日记用。每段标明是谁在说。 */
 export function plain(messages) {
+    const ctx = getContext();
+    const char = ctx.name2 || 'Char';
+    const user = ctx.name1 || 'User';
     return messages.map(m => {
-        const who = m.is_user ? (getContext().name1 || 'User') : (m.name || getContext().name2 || 'Char');
-        return `${who}：${cleanText(m)}`;
+        const who = m.is_user ? user : (m.name || char);
+        // 标明说话人，不然素材里满篇的"我"会分不清是谁，
+        // 日记很容易写成对方的视角。
+        const tag = m.is_user ? `【${who}（不是你）说/做的】` : `【${who}（你自己）】`;
+        return `${tag}\n${cleanText(m)}`;
     }).join('\n\n');
 }
 
@@ -288,11 +294,16 @@ export async function buildWritePrompt(date, messages) {
         if (onlyChar.length) feed = onlyChar;
     }
 
+    // 素材前加一句归属提醒。用户改了提示词也不会丢，
+    // 因为它是拼在 {{content}} 里的，不在提示词模板中。
+    const who = `（下面是今天的记录。里面的"我"是叙述者自己，不一定是 ${ctx.name2 || '你'}；`
+        + `写日记时只用 ${ctx.name2 || '你'} 的视角，${ctx.name1 || '对方'} 一律用名字或他/她。）\n\n`;
+
     let body = s.writePrompt
         .replaceAll('{{char}}', ctx.name2 || '角色')
         .replaceAll('{{user}}', ctx.name1 || '用户')
         .replaceAll('{{date}}', date || '今天')
-        .replaceAll('{{content}}', plain(feed))
+        .replaceAll('{{content}}', who + plain(feed))
         .replaceAll('{{world}}', world)
         .replaceAll('{{memory}}', memory);
 
