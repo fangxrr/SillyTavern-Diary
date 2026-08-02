@@ -260,10 +260,21 @@ body.tw-lock { overflow: hidden; }
 .tw-editor {
     width: 100%; min-height: 240px; resize: vertical;
     font-family: var(--tw-song); font-size: 14px; line-height: 2.1;
-    color: var(--tw-ink); background: rgba(255,255,255,.3);
-    border: 1px solid rgba(48,45,40,.28); border-radius: var(--tw-r-s); padding: 12px 14px;
+    /* 底色要比纸略深，不能用半透明白——叠在纸上会糊成一片，
+       系统的选中高亮压上来就彻底看不清了 */
+    color: #211f1b;
+    background: #b9b2a2;
+    border: 1px solid rgba(48,45,40,.45);
+    border-radius: var(--tw-r-s); padding: 12px 14px;
+    caret-color: var(--tw-ribbon);
 }
-.tw-editor:focus { outline: none; border-color: rgba(48,45,40,.5); }
+.tw-editor::selection { background: rgba(138,63,54,.28); color: #171512; }
+.tw-editor:focus {
+    outline: none;
+    border-color: rgba(48,45,40,.7);
+    background: #c2bbab;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,.14);
+}
 .tw-page__foot {
     margin-top: 24px; padding-top: 15px; border-top: 1px solid rgba(48,45,40,.2);
     display: flex; gap: 8px; flex-wrap: wrap; align-items: center;

@@ -218,6 +218,16 @@ function viewPage(wall) {
             ta.value = e.text;
             box.replaceWith(ta);
             ta.focus();
+            // 改写时把其他按钮收起来，只留「存下」和「不改了」，
+            // 免得手滑点到旁边的「撕掉」
+            page.querySelectorAll('.tw-page__foot [data-e]').forEach(x => {
+                if (x !== btn) x.style.display = 'none';
+            });
+            const cancel = document.createElement('button');
+            cancel.className = 'tw-pbtn';
+            cancel.textContent = '不改了';
+            cancel.addEventListener('click', ev2 => { ev2.stopPropagation(); go('page'); });
+            btn.after(cancel);
             btn.textContent = '存下';
             btn.dataset.e = 'save';
         }
