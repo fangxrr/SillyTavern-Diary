@@ -280,11 +280,19 @@ export async function buildWritePrompt(date, messages) {
     const world = await readWorld();
     const memory = await readMemory();
 
+    // 很多卡的角色回复里已经复述了 user 那一轮的内容，
+    // 两边都喂等于同一件事说两遍。留一手：滤空了就退回全部。
+    let feed = messages;
+    if (s.onlyCharContent) {
+        const onlyChar = messages.filter(m => !m.is_user);
+        if (onlyChar.length) feed = onlyChar;
+    }
+
     let body = s.writePrompt
         .replaceAll('{{char}}', ctx.name2 || '角色')
         .replaceAll('{{user}}', ctx.name1 || '用户')
         .replaceAll('{{date}}', date || '今天')
-        .replaceAll('{{content}}', plain(messages))
+        .replaceAll('{{content}}', plain(feed))
         .replaceAll('{{world}}', world)
         .replaceAll('{{memory}}', memory);
 

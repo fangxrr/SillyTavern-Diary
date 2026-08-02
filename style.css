@@ -257,22 +257,29 @@ body.tw-lock { overflow: hidden; }
 }
 .tw-page__title { font-family: var(--tw-song); font-size: 19px; font-weight: 600; margin-bottom: 16px; line-height: 1.5; }
 .tw-page__text { font-family: var(--tw-song); font-size: 14px; line-height: 2.25; white-space: pre-wrap; }
-.tw-editor {
+/* 用 #tw-root 前缀 + !important 钉死：
+   酒馆主题对 textarea 有全局规则，只写类选择器会被它盖掉，
+   结果就是浅色字配浅色纸，不选中根本看不见。 */
+#tw-root textarea.tw-editor {
     width: 100%; min-height: 240px; resize: vertical;
-    font-family: var(--tw-song); font-size: 14px; line-height: 2.1;
-    /* 底色要比纸略深，不能用半透明白——叠在纸上会糊成一片，
-       系统的选中高亮压上来就彻底看不清了 */
-    color: #211f1b;
-    background: #b9b2a2;
-    border: 1px solid rgba(48,45,40,.45);
+    font-family: var(--tw-song) !important;
+    font-size: 14px !important;
+    line-height: 2.1 !important;
+    color: #15130f !important;
+    background: #b0a795 !important;
+    -webkit-text-fill-color: #15130f;   /* iOS 上 color 有时不吃，得补这条 */
+    opacity: 1 !important;
+    border: 1px solid rgba(48,45,40,.45) !important;
     border-radius: var(--tw-r-s); padding: 12px 14px;
     caret-color: var(--tw-ribbon);
+    text-shadow: none !important;
 }
-.tw-editor::selection { background: rgba(138,63,54,.28); color: #171512; }
-.tw-editor:focus {
+#tw-root textarea.tw-editor::selection { background: rgba(138,63,54,.3); color: #171512; }
+#tw-root textarea.tw-editor::placeholder { color: rgba(21,19,15,.45); -webkit-text-fill-color: rgba(21,19,15,.45); }
+#tw-root textarea.tw-editor:focus {
     outline: none;
-    border-color: rgba(48,45,40,.7);
-    background: #c2bbab;
+    border-color: rgba(48,45,40,.7) !important;
+    background: #b9b09e !important;
     box-shadow: inset 0 1px 3px rgba(0,0,0,.14);
 }
 .tw-page__foot {
@@ -363,9 +370,17 @@ body.tw-lock { overflow: hidden; }
 
 #tw-root input[type=text], #tw-root input[type=password],
 #tw-root input[type=number], #tw-root select, #tw-root textarea {
-    font-family: var(--tw-mono); font-size: 11px; color: var(--tw-paper);
-    background: #141413; border: 1px solid #2c2b28;
+    font-family: var(--tw-mono); font-size: 11px;
+    color: var(--tw-paper) !important;
+    -webkit-text-fill-color: var(--tw-paper);
+    background: #141413 !important;
+    border: 1px solid #2c2b28;
     padding: 7px 11px; border-radius: var(--tw-r-s);
+    opacity: 1;
+    text-shadow: none;
+}
+#tw-root input::placeholder, #tw-root textarea::placeholder {
+    color: var(--tw-dust-2); -webkit-text-fill-color: var(--tw-dust-2);
 }
 #tw-root input:focus, #tw-root select:focus, #tw-root textarea:focus { outline: none; border-color: var(--tw-metal-2); }
 #tw-root input[type=number] { width: 56px; text-align: center; }

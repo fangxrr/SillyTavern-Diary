@@ -236,6 +236,7 @@ function defaultSettings() {
         includeGreeting: true,
         waitNext: true,
         clean: true,
+        onlyCharContent: true,   // 写日记时只读角色回复，不读 user 的输入
         contentRegex: '',   // 旧版遗留，只用于首次迁移到 perChar
         timeRegex: '',
         perChar: {},        // { 角色标识: { contentRegex, timeRegex } }

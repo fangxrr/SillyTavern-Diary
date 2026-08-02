@@ -432,6 +432,11 @@ async function viewSet(wall) {
         <div class="tw-r"><div class="tw-r__t"><label>剥掉思考和杂标签</label>
           <p>thinking / reasoning / slate / draft / 状态栏</p></div>
           <div class="tw-r__c"><input type="checkbox" class="tw-tog" data-s="clean" ${s.clean ? 'checked' : ''}></div></div>
+        <div class="tw-r"><div class="tw-r__t"><label>只读角色楼层</label>
+          <p>写日记时不看你的输入。角色回复里通常已经复述过那一轮，
+             两边都喂等于同一件事说两遍。<br>
+             如果你的卡不复述、你的输入里有角色不知道的关键动作，就关掉它。</p></div>
+          <div class="tw-r__c"><input type="checkbox" class="tw-tog" data-s="onlyCharContent" ${s.onlyCharContent ? 'checked' : ''}></div></div>
         <div class="tw-r"><div class="tw-r__t"><label>正文在哪</label>
           <p>填了就只取匹配的部分；留空用上面的默认清洗。</p>
           <input type="text" data-rule="contentRegex" value="${esc(rules.contentRegex)}"

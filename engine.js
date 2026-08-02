@@ -160,6 +160,11 @@ export async function tagDates(messages) {
     let allHaveFrag = true;
 
     for (const m of messages) {
+        // 只从角色回复判断日期。user 的输入通常不带时间标记，
+        // 拿去问模型既费钱又容易猜错，还会污染缓存。
+        // 它们的日期在收尾时跟着最近的角色回复走。
+        if (m.is_user) continue;
+
         const uid = store.uidOf(m);
 
         // 先试正则 + 本地解析。算得出就以它为准，直接覆盖缓存——
@@ -197,6 +202,16 @@ export async function tagDates(messages) {
     }
     store.save();
 
+    // user 的输入取「下一条角色回复」的日期。
+    // 一来一回里，user 说的话属于对方回应的那一刻，不是上一轮结束时。
+    const inherit = new Array(messages.length).fill('');
+    let next = '';
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const uid = store.uidOf(messages[i]);
+        if (!messages[i].is_user && d.dateIndex[uid]) next = d.dateIndex[uid];
+        inherit[i] = next;
+    }
+
     // 收尾：套两条硬约束，挡掉模型的离谱判断
     //   1. 不能早于故事起始日
     //   2. 不能比上一条更早（故事时间线是往前走的）
@@ -205,8 +220,8 @@ export async function tagDates(messages) {
     let last = d.startDate || '';
     const tagged = messages.map((m, i) => {
         const uid = store.uidOf(m);
-        const raw = d.dateIndex[uid] || '';
-        let date = raw || last;
+        const raw = m.is_user ? '' : (d.dateIndex[uid] || '');
+        let date = raw || inherit[i] || last;
 
         if (d.startDate && date && date < d.startDate) {
             fixes.push({ i, uid, from: date, to: d.startDate, why: '早于起始日' });
@@ -222,8 +237,6 @@ export async function tagDates(messages) {
 
     if (fixes.length) {
         store.addLog({ kind: '日期已修正', count: fixes.length, fixes });
-        // 修正后的结果写回缓存，免得下次再算一遍
-        for (const t of tagged) if (t.date) d.dateIndex[t.uid] = t.date;
         store.save();
     }
     return tagged;
@@ -336,6 +349,9 @@ async function auditOf(kind, date, messages, promptBody, r, entryId) {
         故事起始日: store.data().startDate || '(没设)',
         楼层: messages.map(m => store.indexOfUid(store.uidOf(m))).join(', '),
         条数: messages.length,
+        实际喂入: store.settings().onlyCharContent
+            ? `${messages.filter(m => !m.is_user).length} 条角色回复（user 楼层未读）`
+            : `${messages.length} 条（含 user 楼层）`,
         每条: messages.map(m => {
             const uid = store.uidOf(m);
             const body = ctxLib.cleanText(m);
