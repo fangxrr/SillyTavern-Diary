@@ -89,6 +89,10 @@ body.tw-lock { overflow: hidden; }
     padding: 22px 17px 15px; cursor: pointer;
     border-radius: var(--tw-r-l);
     color: var(--tw-ink);
+    /* grid 会把同一行的便签拉成等高，内容长的那张必须裁住，
+       否则文字会漏到纸片外面，落在黑背景上 */
+    overflow: hidden;
+    display: flex; flex-direction: column;
     background-image:
         repeating-linear-gradient(0deg, rgba(0,0,0,.014) 0 1px, transparent 1px 2px),
         linear-gradient(168deg, var(--tw-paper-new) 0%, var(--tw-paper) 55%, var(--tw-paper-old) 100%);
@@ -129,15 +133,22 @@ body.tw-lock { overflow: hidden; }
 .tw-slip__date {
     font-family: var(--tw-mono); font-size: 10.5px; letter-spacing: .14em;
     color: var(--tw-ink-2); border-bottom: 1px solid rgba(48,45,40,.18);
-    padding-bottom: 7px; margin-bottom: 9px;
+    padding-bottom: 7px; margin-bottom: 9px; flex-shrink: 0;
     display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
 }
 .tw-slip__no { font-size: 9px; color: rgba(106,101,91,.75); }
-.tw-slip__title { font-family: var(--tw-song); font-size: 14px; font-weight: 600; line-height: 1.5; margin-bottom: 8px; }
+.tw-slip__title { flex-shrink: 0; font-family: var(--tw-song); font-size: 14px; font-weight: 600; line-height: 1.5; margin-bottom: 8px; }
 .tw-slip__body {
+    position: relative;
+    flex: 1; min-height: 0; overflow: hidden;
     font-family: var(--tw-song); font-size: 11.5px; line-height: 1.85;
     color: rgba(48,45,40,.78);
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* 截断处做个渐隐，让"后面还有"这件事看得出来，
+   而不是硬生生断在半个字上 */
+.tw-slip__body::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 22px;
+    background: linear-gradient(180deg, rgba(200,193,180,0), var(--tw-paper) 88%);
 }
 .tw-slip__pin {
     position: absolute; bottom: 9px; right: 11px;
@@ -149,9 +160,11 @@ body.tw-lock { overflow: hidden; }
     .tw-wall { gap: 16px; padding: 12px 6px 24px; }
     .tw-slip { min-height: 132px; padding: 18px 13px 13px; border-radius: var(--tw-r-m); }
     .tw-slip__title { font-size: 13px; }
-    .tw-slip__body { font-size: 11px; -webkit-line-clamp: 3; }
+    .tw-slip__body { font-size: 11px; }
 }
-.tw-daylist .tw-slip { width: 100%; transform: none; margin-bottom: 14px; }
+.tw-daylist .tw-slip { width: 100%; transform: none; margin-bottom: 14px; overflow: visible; }
+.tw-daylist .tw-slip__body { flex: none; overflow: visible; }
+.tw-daylist .tw-slip__body::after { display: none; }
 
 .tw-nothing {
     width: 100%; text-align: center; padding: 60px 20px;
