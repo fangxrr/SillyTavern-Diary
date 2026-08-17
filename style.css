@@ -144,12 +144,8 @@ body.tw-lock { overflow: hidden; }
     font-family: var(--tw-song); font-size: 11.5px; line-height: 1.85;
     color: rgba(48,45,40,.78);
 }
-/* 截断处做个渐隐，让"后面还有"这件事看得出来，
-   而不是硬生生断在半个字上 */
-.tw-slip__body::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 22px;
-    background: linear-gradient(180deg, rgba(200,193,180,0), var(--tw-paper) 88%);
-}
+/* 不做渐隐遮罩：纸的背景本身是渐变的，用固定色去盖必然对不上，
+   会在每张便签底部留下一条比纸更亮的白杠。直接裁断就好。 */
 .tw-slip__pin {
     position: absolute; bottom: 9px; right: 11px;
     font-family: var(--tw-mono); font-size: 8.5px; letter-spacing: .12em;
@@ -164,7 +160,6 @@ body.tw-lock { overflow: hidden; }
 }
 .tw-daylist .tw-slip { width: 100%; transform: none; margin-bottom: 14px; overflow: visible; }
 .tw-daylist .tw-slip__body { flex: none; overflow: visible; }
-.tw-daylist .tw-slip__body::after { display: none; }
 
 .tw-nothing {
     width: 100%; text-align: center; padding: 60px 20px;
@@ -184,7 +179,7 @@ body.tw-lock { overflow: hidden; }
     display: flex; align-items: center; gap: 10px;
     border-radius: var(--tw-r-m) var(--tw-r-m) var(--tw-r-s) var(--tw-r-s);
     border-top: 1px solid rgba(255,255,255,.14);
-    box-shadow: 0 -1px 2px rgba(0,0,0,.28);
+    box-shadow: none;
 }
 .tw-feed__dot {
     width: 6px; height: 6px; border-radius: 50%; background: var(--tw-ribbon);

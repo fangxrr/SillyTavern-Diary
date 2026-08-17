@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "fangxrr",
-    "version": "0.4.9",
+    "version": "0.5.0",
     "homePage": "https://github.com/fangxrr/SillyTavern-Diary",
     "auto_update": true
 }
