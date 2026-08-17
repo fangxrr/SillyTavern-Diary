@@ -37,9 +37,9 @@
     z-index: 10000;
     display: none;
     overflow: hidden;
-    background:
-        radial-gradient(120% 80% at 50% 0%, #161614 0%, var(--tw-desk) 62%),
-        var(--tw-desk);
+    /* 用纯色，不用径向渐变。渐变从顶部发散、越往下越黑，
+       到便签墙底部正好暗到最深，看起来就像横贯屏幕的一条阴影带。 */
+    background: var(--tw-desk);
     font-family: var(--tw-sans);
     color: var(--tw-paper);
 }
@@ -173,7 +173,10 @@ body.tw-lock { overflow: hidden; }
 
 .tw-feed {
     width: 74%; margin: 0 auto;
-    background: linear-gradient(180deg, rgba(206,200,187,.1) 0%, var(--tw-paper) 30%);
+    /* 整条都要不透明。原来顶部用了 rgba(...,.1)，本意是模拟"纸还在滚筒后面"，
+       实际是把黑底透出来，变成纸条上方一条脏暗带。
+       改用略深的纸色做压痕，效果一样但不透黑。 */
+    background: linear-gradient(180deg, #b5aea0 0%, var(--tw-paper) 22%);
     padding: 13px 18px 15px; color: var(--tw-ink);
     font-family: var(--tw-mono); font-size: 11px; letter-spacing: .08em;
     display: flex; align-items: center; gap: 10px;
@@ -190,7 +193,7 @@ body.tw-lock { overflow: hidden; }
 .tw-platen {
     height: 26px; border-radius: 13px; margin: 0 -4px; position: relative;
     background: linear-gradient(180deg, var(--tw-metal-2) 0%, var(--tw-metal) 38%, #26241f 100%);
-    box-shadow: 0 3px 10px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.1);
+    box-shadow: 0 2px 5px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.1);
     display: flex; align-items: center; justify-content: space-between; padding: 0 9px;
 }
 .tw-platen::before, .tw-platen::after {
@@ -203,7 +206,7 @@ body.tw-lock { overflow: hidden; }
     background: linear-gradient(180deg, var(--tw-machine-2) 0%, var(--tw-machine) 46%, #111110 100%);
     border-radius: var(--tw-r-m) var(--tw-r-m) var(--tw-r-xl) var(--tw-r-xl);
     padding: 16px 20px 18px;
-    box-shadow: 0 18px 40px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.055);
+    box-shadow: 0 10px 22px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.055);
     border: 1px solid var(--tw-hair); border-top: 0;
 }
 .tw-brand {
