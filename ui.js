@@ -47,6 +47,7 @@ export function addWandButton() {
 
 export function open() {
     if (!root) build();
+    applySlipWidth();
     root.classList.add('tw-on');
     document.body.classList.add('tw-lock');
     go(view);
@@ -90,6 +91,15 @@ function build() {
         if (key) { go(key.dataset.k); return; }
         const slip = ev.target.closest('.tw-slip[data-id]');
         if (slip) { spread(slip.dataset.id); return; }
+
+        // 在读一张纸时，点纸和打字机以外的地方就退回墙上，
+        // 省得每次都要滑到最顶上按「回到墙上」
+        if (view === 'page'
+            && !ev.target.closest('.tw-page')
+            && !ev.target.closest('.tw-machine')
+            && !ev.target.closest('.tw-shut')) {
+            go('wall');
+        }
     });
 
     document.addEventListener('keydown', e => {
@@ -116,6 +126,12 @@ function go(k) {
 }
 
 function feed(html) { root.querySelector('.tw-feed__t').innerHTML = html; }
+
+/** 便签宽度走 CSS 变量，grid 会据此决定一行放几张 */
+function applySlipWidth() {
+    const w = Number(store.settings().slipWidth) || 190;
+    root?.style.setProperty('--tw-slip-w', `${Math.min(320, Math.max(120, w))}px`);
+}
 
 export function refresh() {
     if (root?.classList.contains('tw-on')) go(view);
@@ -432,6 +448,13 @@ async function viewSet(wall) {
         <div class="tw-r"><div class="tw-r__t"><label>剥掉思考和杂标签</label>
           <p>thinking / reasoning / slate / draft / 状态栏</p></div>
           <div class="tw-r__c"><input type="checkbox" class="tw-tog" data-s="clean" ${s.clean ? 'checked' : ''}></div></div>
+        <div class="tw-r"><div class="tw-r__t"><label>便签大小</label>
+          <p>调小一点，一行就能多放几张。</p>
+          <div class="tw-probe" style="margin-top:10px">
+            <input type="range" min="120" max="320" step="10" data-s="slipWidth"
+              value="${s.slipWidth}" style="flex:1;min-width:150px">
+            <span data-out="slip">${s.slipWidth}px</span>
+          </div></div></div>
         <div class="tw-r"><div class="tw-r__t"><label>只读角色楼层</label>
           <p>写日记时不看你的输入。角色回复里通常已经复述过那一轮，
              两边都喂等于同一件事说两遍。<br>
@@ -586,6 +609,14 @@ function bindSettings(wall) {
             if (path === 'auto') wall.querySelector('.tw-auto')?.toggleAttribute('data-off', !el.checked);
         });
     });
+
+    const slider = wall.querySelector('[data-s="slipWidth"]');
+    if (slider) {
+        slider.addEventListener('input', () => {
+            wall.querySelector('[data-out="slip"]').textContent = `${slider.value}px`;
+            applySlipWidth();
+        });
+    }
 
     wall.querySelectorAll('[data-rule]').forEach(el =>
         el.addEventListener('input', () => store.saveCharRules({ [el.dataset.rule]: el.value })));

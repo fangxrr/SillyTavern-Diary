@@ -241,6 +241,7 @@ function defaultSettings() {
         trigger: { newDay: true, everyN: true, n: 10 },
         includeGreeting: true,
         waitNext: true,
+        slipWidth: 190,     // 便签宽度，越小一行放得越多
         clean: true,
         onlyCharContent: true,   // 写日记时只读角色回复，不读 user 的输入
         contentRegex: '',   // 旧版遗留，只用于首次迁移到 perChar
